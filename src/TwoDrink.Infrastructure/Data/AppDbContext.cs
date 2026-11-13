@@ -15,6 +15,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<VenueSponsorship> VenueSponsorships => Set<VenueSponsorship>();
     public DbSet<Season> Seasons => Set<Season>();
 
+    public DbSet<CheckIn> CheckIns => Set<CheckIn>();
+    public DbSet<CheckInIntent> CheckInIntents => Set<CheckInIntent>();
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         b.Entity<User>(e =>
@@ -72,6 +75,27 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.BadgeArtUrl).HasMaxLength(2048);
             e.Property(x => x.CreatedBy).HasMaxLength(255);
             e.HasIndex(x => new { x.VenueId, x.StartsAt });
+            e.HasOne<Venue>().WithMany().HasForeignKey(x => x.VenueId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<CheckIn>(e =>
+        {
+            e.ToTable("check_ins");
+            e.Property(x => x.PhotoBlobName).HasMaxLength(200);
+            e.HasIndex(x => new { x.UserId, x.CreatedAt });
+            e.HasIndex(x => new { x.UserId, x.VenueId, x.CreatedAt });
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<LedgerAccount>().WithMany().HasForeignKey(x => x.LedgerAccountId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Venue>().WithMany().HasForeignKey(x => x.VenueId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Season>().WithMany().HasForeignKey(x => x.SeasonId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<CheckInIntent>(e =>
+        {
+            e.ToTable("check_in_intents");
+            e.Property(x => x.BlobName).HasMaxLength(200);
+            e.HasIndex(x => x.UserId);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<Venue>().WithMany().HasForeignKey(x => x.VenueId).OnDelete(DeleteBehavior.Restrict);
         });
 

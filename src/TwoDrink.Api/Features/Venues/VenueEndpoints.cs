@@ -22,7 +22,6 @@ public static class VenueEndpoints
     public static IServiceCollection AddVenues(this IServiceCollection services, IConfiguration config)
     {
         services.AddMemoryCache();
-        services.AddSingleton(config.GetSection("Rules").Get<RulesOptions>() ?? new RulesOptions());
         services.AddHttpClient<IPlacesClient, GooglePlacesClient>(c => c.Timeout = TimeSpan.FromSeconds(10));
         services.AddScoped<VenueService>();
         services.AddScoped<VenueTierService>();

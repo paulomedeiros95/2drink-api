@@ -39,3 +39,10 @@ Docker must be able to pull `postgres:17` and `testcontainers/ryuk` from Docker 
 - `GET /venues/nearby?lat=&lng=` (Player policy) calls Google Places (New) `searchNearby` through `IPlacesClient`; results are upserted into `venues` by `place_id` and cached in `IMemoryCache` for 1h per ~110 m cell (coordinates rounded to 3 decimals). Google failures return 503 `places_unavailable`.
 - The API key is never committed: in dev run `dotnet user-secrets set "Google:PlacesApiKey" "<key>" --project src/TwoDrink.Api` (Key Vault in prod). Tests replace `IPlacesClient` with `ApiFactory.Places` (`FakePlacesClient`: `NearbyCalls`, `DetailsCalls`, `Reset()`); call `Reset()` at the start of each test.
 - Sponsorship windows are `[StartsAt, EndsAt)`; `VenueTierService` picks the highest tier if several overlap. Seasons are seeded in the migration and never overlap (`SeasonService`, DB exclusion constraint); there is no public seasons endpoint yet.
+
+## Check-in intents and selfie storage
+
+- `POST /checkins/intents` (Player policy) validates presence (`Geofence`) and cooldowns (`CheckInCooldown`, from the `check_ins` table) and returns `{ intentId, uploadUrl, expiresAt }`; the intent lives 10 min. The app PUTs the JPEG straight to Blob Storage (`x-ms-blob-type: BlockBlob`) using the write-only SAS (blob `checkins/{intentId}.jpg` in private container `selfies`; HTTPS-only unless `Storage:AllowHttpSas=true`).
+- Storage connection string is never committed: in dev run `dotnet user-secrets set "Storage:ConnectionString" "<azure storage connection string or UseDevelopmentStorage=true>" --project src/TwoDrink.Api` (Key Vault in prod). The API creates the `selfies` container at startup if missing and refuses to start without the setting.
+- Tests start Azurite (`mcr.microsoft.com/azure-storage/azurite`, on MCR) through `ApiFactory`, which sets `Storage:ConnectionString` and `Storage:AllowHttpSas`.
+- `RulesOptions` is registered once, in `Program.cs`, from the `Rules` section of `appsettings.json` (spec defaults).

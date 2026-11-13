@@ -22,6 +22,121 @@ namespace TwoDrink.Infrastructure.Data.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.CheckIn", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("ClosedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("closed_at");
+
+                    b.Property<DateTimeOffset>("ComplementsUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("complements_until");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("DrinkCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("drink_count");
+
+                    b.Property<bool>("HydrationMet")
+                        .HasColumnType("boolean")
+                        .HasColumnName("hydration_met");
+
+                    b.Property<Guid>("LedgerAccountId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ledger_account_id");
+
+                    b.Property<string>("PhotoBlobName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("photo_blob_name");
+
+                    b.Property<Guid?>("SeasonId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("season_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<Guid>("VenueId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("venue_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_check_ins");
+
+                    b.HasIndex("LedgerAccountId")
+                        .HasDatabaseName("ix_check_ins_ledger_account_id");
+
+                    b.HasIndex("SeasonId")
+                        .HasDatabaseName("ix_check_ins_season_id");
+
+                    b.HasIndex("VenueId")
+                        .HasDatabaseName("ix_check_ins_venue_id");
+
+                    b.HasIndex("UserId", "CreatedAt")
+                        .HasDatabaseName("ix_check_ins_user_id_created_at");
+
+                    b.HasIndex("UserId", "VenueId", "CreatedAt")
+                        .HasDatabaseName("ix_check_ins_user_id_venue_id_created_at");
+
+                    b.ToTable("check_ins", (string)null);
+                });
+
+            modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.CheckInIntent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("BlobName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("blob_name");
+
+                    b.Property<Guid?>("ConfirmedCheckInId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("confirmed_check_in_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<Guid>("VenueId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("venue_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_check_in_intents");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_check_in_intents_user_id");
+
+                    b.HasIndex("VenueId")
+                        .HasDatabaseName("ix_check_in_intents_venue_id");
+
+                    b.ToTable("check_in_intents", (string)null);
+                });
+
             modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.LedgerAccount", b =>
                 {
                     b.Property<Guid>("Id")
@@ -366,6 +481,53 @@ namespace TwoDrink.Infrastructure.Data.Migrations
                         .HasDatabaseName("ix_venue_sponsorships_venue_id_starts_at");
 
                     b.ToTable("venue_sponsorships", (string)null);
+                });
+
+            modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.CheckIn", b =>
+                {
+                    b.HasOne("TwoDrink.Infrastructure.Data.Entities.LedgerAccount", null)
+                        .WithMany()
+                        .HasForeignKey("LedgerAccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_check_ins_ledger_accounts_ledger_account_id");
+
+                    b.HasOne("TwoDrink.Infrastructure.Data.Entities.Season", null)
+                        .WithMany()
+                        .HasForeignKey("SeasonId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_check_ins_seasons_season_id");
+
+                    b.HasOne("TwoDrink.Infrastructure.Data.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_check_ins_users_user_id");
+
+                    b.HasOne("TwoDrink.Infrastructure.Data.Entities.Venue", null)
+                        .WithMany()
+                        .HasForeignKey("VenueId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_check_ins_venues_venue_id");
+                });
+
+            modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.CheckInIntent", b =>
+                {
+                    b.HasOne("TwoDrink.Infrastructure.Data.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_check_in_intents_users_user_id");
+
+                    b.HasOne("TwoDrink.Infrastructure.Data.Entities.Venue", null)
+                        .WithMany()
+                        .HasForeignKey("VenueId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_check_in_intents_venues_venue_id");
                 });
 
             modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.LedgerEntry", b =>

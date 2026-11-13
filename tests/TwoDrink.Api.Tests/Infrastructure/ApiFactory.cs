@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
+using Testcontainers.Azurite;
 using Testcontainers.PostgreSql;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -24,6 +25,10 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     private const string AppPassword = "twodrink_api_test_pw";
 
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17").Build();
+
+    private readonly AzuriteContainer _azurite = new AzuriteBuilder("mcr.microsoft.com/azure-storage/azurite")
+        .WithCommand("--skipApiVersionCheck")
+        .Build();
 
     public TestClock Clock { get; } = new();
 
@@ -52,7 +57,7 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        await _postgres.StartAsync();
+        await Task.WhenAll(_postgres.StartAsync(), _azurite.StartAsync());
         await using (var owner = NewOwnerDb())
         {
             await owner.Database.MigrateAsync();
@@ -61,12 +66,18 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         }
     }
 
-    async Task IAsyncLifetime.DisposeAsync() => await _postgres.DisposeAsync();
+    async Task IAsyncLifetime.DisposeAsync()
+    {
+        await _postgres.DisposeAsync();
+        await _azurite.DisposeAsync();
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("ConnectionStrings:Default", AppConnectionString);
         builder.UseSetting("Ledger:VerificationJobEnabled", "false");
+        builder.UseSetting("Storage:ConnectionString", _azurite.GetConnectionString());
+        builder.UseSetting("Storage:AllowHttpSas", "true");
         builder.UseSetting("Jwt:SigningKey", "test-signing-key-test-signing-key-test-signing-key-0123456789");
         builder.ConfigureServices(services =>
         {
