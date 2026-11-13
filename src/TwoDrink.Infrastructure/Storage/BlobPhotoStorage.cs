@@ -46,15 +46,35 @@ public sealed class BlobPhotoStorage(IConfiguration config, TimeProvider time, I
     public async Task<PhotoInfo?> GetInfoAsync(string blobName, CancellationToken ct)
     {
         await EnsureReadyAsync(ct);
-        try
+        return await Guard(() => PropertiesOrNullAsync(_container.Value.GetBlobClient(blobName), ct), ct);
+    }
+
+    public async Task<PhotoInfo?> CopyAsync(string sourceBlobName, string destinationBlobName, CancellationToken ct)
+    {
+        await EnsureReadyAsync(ct);
+        return await Guard(async () =>
         {
-            var props = await _container.Value.GetBlobClient(blobName).GetPropertiesAsync(cancellationToken: ct);
-            return new PhotoInfo(props.Value.ContentLength, props.Value.ContentType);
-        }
-        catch (RequestFailedException e) when (e.Status == 404)
-        {
-            return null;
-        }
+            var source = _container.Value.GetBlobClient(sourceBlobName);
+            var target = _container.Value.GetBlobClient(destinationBlobName);
+            if (await PropertiesOrNullAsync(source, ct) is null) return null;
+            try
+            {
+                // Same account: the shared key that authorises the destination also authorises the source.
+                var copy = await target.StartCopyFromUriAsync(source.Uri, cancellationToken: ct);
+                await copy.WaitForCompletionAsync(ct);
+            }
+            catch (RequestFailedException e) when (e.Status == 404)
+            {
+                return null; // the source vanished between the check and the copy
+            }
+            return await PropertiesOrNullAsync(target, ct);
+        }, ct);
+    }
+
+    public async Task DeleteAsync(string blobName, CancellationToken ct)
+    {
+        await EnsureReadyAsync(ct);
+        await Guard(async () => (await _container.Value.GetBlobClient(blobName).DeleteIfExistsAsync(cancellationToken: ct)).Value, ct);
     }
 
     public async Task EnsureReadyAsync(CancellationToken ct)
@@ -64,12 +84,39 @@ public sealed class BlobPhotoStorage(IConfiguration config, TimeProvider time, I
         try
         {
             if (_containerReady) return;
-            await _container.Value.CreateIfNotExistsAsync(cancellationToken: ct);
+            await Guard(() => _container.Value.CreateIfNotExistsAsync(cancellationToken: ct), ct);
             _containerReady = true;
         }
         finally
         {
             _init.Release();
+        }
+    }
+
+    private static async Task<PhotoInfo?> PropertiesOrNullAsync(BlobClient blob, CancellationToken ct)
+    {
+        try
+        {
+            var props = await blob.GetPropertiesAsync(cancellationToken: ct);
+            return new PhotoInfo(props.Value.ContentLength, props.Value.ContentType);
+        }
+        catch (RequestFailedException e) when (e.Status == 404)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Turns storage/network failures into <see cref="PhotoStorageUnavailableException"/>; caller cancellation passes through.</summary>
+    private static async Task<T> Guard<T>(Func<Task<T>> operation, CancellationToken ct)
+    {
+        try
+        {
+            return await operation();
+        }
+        catch (Exception e) when (e is RequestFailedException or HttpRequestException or TimeoutException or AggregateException
+                                   || (e is OperationCanceledException && !ct.IsCancellationRequested))
+        {
+            throw new PhotoStorageUnavailableException(e);
         }
     }
 
@@ -84,7 +131,7 @@ public sealed class BlobPhotoStorage(IConfiguration config, TimeProvider time, I
         {
             await EnsureReadyAsync(ct);
         }
-        catch (Exception e) when (e is RequestFailedException or HttpRequestException or TaskCanceledException or TimeoutException or AggregateException)
+        catch (Exception e) when (e is PhotoStorageUnavailableException or OperationCanceledException)
         {
             log.LogWarning(e, "Blob storage unavailable at startup; the selfies container will be created on first use.");
         }

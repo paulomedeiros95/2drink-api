@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using TwoDrink.Api.Features.Auth;
 using TwoDrink.Api.Features.Venues;
 using TwoDrink.Domain.Presence;
+using TwoDrink.Domain.Scoring;
 using TwoDrink.Infrastructure.Data;
 using TwoDrink.Infrastructure.Data.Entities;
 using TwoDrink.Infrastructure.Storage;
@@ -21,6 +22,8 @@ public static class CheckInIntentEndpoints
     {
         services.AddScoped<Geofence>();
         services.AddScoped<CheckInCooldown>();
+        services.AddSingleton<DrinkCatalog>();
+        services.AddScoped<CheckInService>();
         services.AddSingleton<BlobPhotoStorage>();
         services.AddSingleton<IPhotoStorage>(sp => sp.GetRequiredService<BlobPhotoStorage>());
         services.AddHostedService(sp => sp.GetRequiredService<BlobPhotoStorage>());
@@ -31,7 +34,7 @@ public static class CheckInIntentEndpoints
     {
         app.MapPost("/checkins/intents", async (CheckInIntentRequest req, ClaimsPrincipal principal, AppDbContext db,
             VenueService venues, Geofence geofence, CheckInCooldown cooldown, IPhotoStorage storage, TimeProvider time,
-            CancellationToken ct) =>
+            ILoggerFactory logs, CancellationToken ct) =>
         {
             var userId = Guid.Parse(principal.FindFirstValue(AuthSetup.SubjectClaim)!);
 
@@ -52,18 +55,29 @@ public static class CheckInIntentEndpoints
                 .MaxAsync(c => (DateTimeOffset?)c.CreatedAt, ct);
             cooldown.Ensure(now, lastHere, lastAnywhere);
 
-            await storage.EnsureReadyAsync(ct);
-
+            Uri uploadUrl;
             var id = Guid.NewGuid();
+            var blobName = $"checkins/{id}.jpg";
+            try
+            {
+                await storage.EnsureReadyAsync(ct);
+                uploadUrl = storage.CreateUploadUrl(blobName, IntentLifetime);
+            }
+            catch (PhotoStorageUnavailableException e)
+            {
+                logs.CreateLogger("CheckIns").LogWarning(e, "Photo storage unavailable while creating a check-in intent");
+                return CheckInEndpoints.StorageUnavailable();
+            }
+
             var intent = new CheckInIntent
             {
-                Id = id, UserId = userId, VenueId = venue.Id, BlobName = $"checkins/{id}.jpg",
+                Id = id, UserId = userId, VenueId = venue.Id, BlobName = blobName,
                 CreatedAt = now, ExpiresAt = now + IntentLifetime,
             };
             db.CheckInIntents.Add(intent);
             await db.SaveChangesAsync(ct);
 
-            return Results.Ok(new CheckInIntentResponse(id, storage.CreateUploadUrl(intent.BlobName, IntentLifetime), intent.ExpiresAt));
+            return Results.Ok(new CheckInIntentResponse(id, uploadUrl, intent.ExpiresAt));
         }).RequireAuthorization(AuthSetup.PlayerPolicy);
 
         return app;

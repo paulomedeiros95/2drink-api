@@ -1,4 +1,6 @@
+using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,11 +15,12 @@ using TwoDrink.Domain.Rules;
 using TwoDrink.Infrastructure.Auth;
 using TwoDrink.Infrastructure.Data;
 using TwoDrink.Infrastructure.Places;
+using TwoDrink.Infrastructure.Storage;
 
 namespace TwoDrink.Api.Tests.Infrastructure;
 
 /// <summary>A signed-in player with a complete profile.</summary>
-public record PlayerClient(HttpClient Http, Guid UserId, Guid LedgerAccountId);
+public record PlayerClient(HttpClient Http, Guid UserId, Guid LedgerAccountId, string Subject);
 
 public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
@@ -87,8 +90,17 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
             services.AddSingleton<IExternalTokenValidator, FakeExternalTokenValidator>();
             services.RemoveAll<IPlacesClient>();
             services.AddSingleton<IPlacesClient>(Places);
+            services.RemoveAll<IPhotoStorage>();
+            services.AddSingleton<IPhotoStorage>(sp => new FaultInjectingPhotoStorage(sp.GetRequiredService<BlobPhotoStorage>()));
         });
     }
+
+    /// <summary>The photo storage the API uses (real Azurite storage behind a fault-injection switch).</summary>
+    public FaultInjectingPhotoStorage PhotoStorage => (FaultInjectingPhotoStorage)Services.GetRequiredService<IPhotoStorage>();
+
+    /// <summary>A client for the selfies container, as the storage owner (to inspect blobs in tests).</summary>
+    public BlobContainerClient SelfiesContainer() =>
+        new(Services.GetRequiredService<IConfiguration>()["Storage:ConnectionString"], BlobPhotoStorage.ContainerName);
 
     /// <summary>
     /// Logs in via the fake validator (<c>valid:&lt;subject&gt;</c> on /auth/google), completes the profile as an adult at the
@@ -97,11 +109,7 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     public async Task<PlayerClient> CreatePlayerClientAsync(string subject = "p1")
     {
         var http = CreateClient();
-        var login = await http.PostAsJsonAsync("/auth/google", new { idToken = "valid:" + subject });
-        login.EnsureSuccessStatusCode();
-        var tokens = await login.Content.ReadFromJsonAsync<JsonElement>();
-        http.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", tokens.GetProperty("accessToken").GetString());
+        await LoginAsync(http, subject);
 
         var adultBirth = BusinessTime.Today(Clock.GetUtcNow()).AddYears(-30);
         var put = await http.PutAsJsonAsync("/me/profile", new
@@ -115,6 +123,18 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
         await using var db = NewDb();
         var user = db.Users.Single(u => u.Provider == ExternalProvider.Google && u.Subject == subject);
-        return new PlayerClient(http, user.Id, user.LedgerAccountId);
+        return new PlayerClient(http, user.Id, user.LedgerAccountId, subject);
+    }
+
+    /// <summary>Logs the player in again at the current <see cref="Clock"/> (access tokens live 1h; tests jump the clock).</summary>
+    public Task ReauthenticateAsync(PlayerClient player) => LoginAsync(player.Http, player.Subject);
+
+    private static async Task LoginAsync(HttpClient http, string subject)
+    {
+        var login = await http.PostAsJsonAsync("/auth/google", new { idToken = "valid:" + subject });
+        login.EnsureSuccessStatusCode();
+        var tokens = await login.Content.ReadFromJsonAsync<JsonElement>();
+        http.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", tokens.GetProperty("accessToken").GetString());
     }
 }

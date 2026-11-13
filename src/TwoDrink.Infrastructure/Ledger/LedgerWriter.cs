@@ -28,7 +28,7 @@ public class LedgerWriter(AppDbContext db, TimeProvider clock)
 
         // Serialises writers per account until the transaction ends, so the chain cannot fork.
         var key = accountId.ToString("D");
-        await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock(hashtext({key}))", ct);
+        await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({AdvisoryLocks.Ledger}, hashtext({key}))", ct);
 
         var last = await db.LedgerEntries
             .Where(x => x.AccountId == accountId)

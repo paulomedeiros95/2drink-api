@@ -59,6 +59,7 @@ app.MapAuthEndpoints();
 app.MapProfileEndpoints();
 app.MapVenueEndpoints();
 app.MapCheckInIntentEndpoints();
+app.MapCheckInEndpoints();
 
 app.Run();
 

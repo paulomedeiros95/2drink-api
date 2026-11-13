@@ -46,3 +46,12 @@ Docker must be able to pull `postgres:17` and `testcontainers/ryuk` from Docker 
 - Storage connection string is never committed: in dev run `dotnet user-secrets set "Storage:ConnectionString" "<azure storage connection string or UseDevelopmentStorage=true>" --project src/TwoDrink.Api` (Key Vault in prod). The API creates the `selfies` container at startup if missing and refuses to start without the setting.
 - Tests start Azurite (`mcr.microsoft.com/azure-storage/azurite`, on MCR) through `ApiFactory`, which sets `Storage:ConnectionString` and `Storage:AllowHttpSas`.
 - `RulesOptions` is registered once, in `Program.cs`, from the `Rules` section of `appsettings.json` (spec defaults).
+- `POST /checkins/intents/{intentId}/confirm` (Player policy, `CheckInService`) runs in one transaction under a per-user advisory lock and
+  is idempotent (a confirmed intent returns its stored result). It freezes the selfie with a server-side copy to `final/{checkInId}.jpg`
+  (stored in `CheckIn.PhotoBlobName`) before committing, then deletes the upload blob. Storage failures surface as
+  `PhotoStorageUnavailableException` → 503 `storage_unavailable`.
+- Advisory locks use the two-key form `pg_advisory_xact_lock(namespace, hashtext(id::text))`; namespaces live in `AdvisoryLocks`
+  (1 ledger, 2 league slots, 3 check-ins).
+- Check-in tests derive from `CheckInTestBase` (fresh player `Me` and venue `Bar` per test; `Confirm`, `Sponsor`, `EndSponsorship`,
+  `SeedSeason`, `LedgerTotal`, `CheckInCount`). `ApiFactory.PhotoStorage.FailCopy` injects a storage outage;
+  `ApiFactory.ReauthenticateAsync` renews the 1h token after clock jumps.

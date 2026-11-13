@@ -392,6 +392,63 @@ namespace TwoDrink.Infrastructure.Data.Migrations
                     b.ToTable("users", (string)null);
                 });
 
+            modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.UserBadge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ArtUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("art_url");
+
+                    b.Property<Guid>("CheckInId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("check_in_id");
+
+                    b.Property<DateTimeOffset>("GrantedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("granted_at");
+
+                    b.Property<Guid>("SeasonId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("season_id");
+
+                    b.Property<string>("Tier")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("tier");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<Guid>("VenueId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("venue_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_user_badges");
+
+                    b.HasIndex("CheckInId")
+                        .HasDatabaseName("ix_user_badges_check_in_id");
+
+                    b.HasIndex("SeasonId")
+                        .HasDatabaseName("ix_user_badges_season_id");
+
+                    b.HasIndex("VenueId")
+                        .HasDatabaseName("ix_user_badges_venue_id");
+
+                    b.HasIndex("UserId", "VenueId", "SeasonId", "Tier")
+                        .IsUnique()
+                        .HasDatabaseName("ix_user_badges_user_id_venue_id_season_id_tier");
+
+                    b.ToTable("user_badges", (string)null);
+                });
+
             modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.Venue", b =>
                 {
                     b.Property<Guid>("Id")
@@ -558,6 +615,37 @@ namespace TwoDrink.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_users_ledger_accounts_ledger_account_id");
+                });
+
+            modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.UserBadge", b =>
+                {
+                    b.HasOne("TwoDrink.Infrastructure.Data.Entities.CheckIn", null)
+                        .WithMany()
+                        .HasForeignKey("CheckInId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_user_badges_check_ins_check_in_id");
+
+                    b.HasOne("TwoDrink.Infrastructure.Data.Entities.Season", null)
+                        .WithMany()
+                        .HasForeignKey("SeasonId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_user_badges_seasons_season_id");
+
+                    b.HasOne("TwoDrink.Infrastructure.Data.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_user_badges_users_user_id");
+
+                    b.HasOne("TwoDrink.Infrastructure.Data.Entities.Venue", null)
+                        .WithMany()
+                        .HasForeignKey("VenueId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_user_badges_venues_venue_id");
                 });
 
             modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.VenueSponsorship", b =>

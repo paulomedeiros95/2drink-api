@@ -17,6 +17,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
     public DbSet<CheckIn> CheckIns => Set<CheckIn>();
     public DbSet<CheckInIntent> CheckInIntents => Set<CheckInIntent>();
+    public DbSet<UserBadge> UserBadges => Set<UserBadge>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -97,6 +98,19 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => x.UserId);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<Venue>().WithMany().HasForeignKey(x => x.VenueId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<UserBadge>(e =>
+        {
+            e.ToTable("user_badges");
+            e.Property(x => x.Tier).HasConversion<string>().HasMaxLength(32);
+            e.Property(x => x.ArtUrl).HasMaxLength(2048);
+            e.HasIndex(x => new { x.UserId, x.VenueId, x.SeasonId, x.Tier }).IsUnique();
+            e.HasIndex(x => x.CheckInId);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Venue>().WithMany().HasForeignKey(x => x.VenueId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Season>().WithMany().HasForeignKey(x => x.SeasonId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<CheckIn>().WithMany().HasForeignKey(x => x.CheckInId).OnDelete(DeleteBehavior.Restrict);
         });
 
         var season2026H2 = new Season { Id = new Guid("5ea50000-2026-4000-8000-000000000002"), Name = "2026 – 2º semestre", StartDate = new DateOnly(2026, 7, 1), EndDate = new DateOnly(2026, 12, 31) };

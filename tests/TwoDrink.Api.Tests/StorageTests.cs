@@ -1,4 +1,6 @@
 using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using TwoDrink.Api.Tests.Infrastructure;
@@ -29,6 +31,25 @@ public class StorageStartupTests : IClassFixture<UnreachableStorageFactory>
     {
         var res = await _f.CreateClient().GetAsync("/health");
         Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+    }
+
+    [Fact]
+    public async Task Intent_returns_503_storage_unavailable_when_storage_is_down()
+    {
+        var player = await _f.CreatePlayerClientAsync("sd-" + Guid.NewGuid().ToString("N"));
+        await using var db = _f.NewDb();
+        var venue = new TwoDrink.Infrastructure.Data.Entities.Venue
+        {
+            Id = Guid.NewGuid(), PlaceId = "storage-down-" + Guid.NewGuid().ToString("N"), Name = "Bar", Address = "Rua",
+            Lat = -23.5505, Lng = -46.6333, CachedAt = _f.Clock.GetUtcNow(),
+        };
+        db.Venues.Add(venue);
+        await db.SaveChangesAsync();
+
+        var res = await player.Http.PostAsJsonAsync("/checkins/intents",
+            new { venueId = venue.Id, lat = -23.5506, lng = -46.6333, accuracyM = 10, isMocked = false });
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, res.StatusCode);
+        Assert.Equal("storage_unavailable", (await res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
     }
 }
 
