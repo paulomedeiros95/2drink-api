@@ -40,6 +40,23 @@ public static class LeagueEndpoints
             }
         }).RequireAuthorization(AuthSetup.PlayerPolicy);
 
+        app.MapPost("/leagues/{leagueId:guid}/renew", async (Guid leagueId, RenewLeagueRequest req, ClaimsPrincipal principal, LeagueService leagues, CancellationToken ct) =>
+        {
+            try
+            {
+                return Results.Ok(await leagues.RenewAsync(UserId(principal), leagueId, req, ct));
+            }
+            catch (LeagueNotFoundException)
+            {
+                return NotFound("League not found", "league_not_found");
+            }
+            catch (NotLeagueCreatorException)
+            {
+                return Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Only the creator can renew",
+                    extensions: new Dictionary<string, object?> { ["code"] = "not_league_creator" });
+            }
+        }).RequireAuthorization(AuthSetup.PlayerPolicy);
+
         app.MapPost("/leagues/{leagueId:guid}/leave", async (Guid leagueId, ClaimsPrincipal principal, LeagueService leagues, CancellationToken ct) =>
         {
             try

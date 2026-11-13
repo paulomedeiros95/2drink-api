@@ -14,6 +14,11 @@ public record LeagueSummary(Guid Id, string Name, string? Description, DateOnly 
 
 public record MyLeague(Guid Id, string Name, DateOnly StartDate, DateOnly EndDate, string Status, int MemberCount);
 
+public record RenewLeagueRequest(string? Name, DateOnly StartDate, DateOnly EndDate);
+
+public record RenewLeagueResponse(Guid Id, string Name, string? Description, DateOnly StartDate, DateOnly EndDate, string Status,
+    IReadOnlyList<Guid> SkippedUserIds);
+
 public record InviteResponse(string Token, string Url, DateTimeOffset ExpiresAt);
 
 /// <summary>404 <c>league_not_found</c>.</summary>
@@ -38,25 +43,12 @@ public class LeagueService(AppDbContext db, RulesOptions rules, TimeProvider tim
 
     public async Task<LeagueSummary> CreateAsync(Guid userId, CreateLeagueRequest req, CancellationToken ct)
     {
-        var name = req.Name?.Trim() ?? "";
-        if (name.Length is 0 or > MaxNameLength)
-            throw new RuleViolation("league_name_invalid", $"The name must have 1 to {MaxNameLength} characters.");
-        var description = string.IsNullOrWhiteSpace(req.Description) ? null : req.Description.Trim();
-        if (description is { Length: > MaxDescriptionLength })
-            throw new RuleViolation("league_description_invalid", $"The description must have at most {MaxDescriptionLength} characters.");
-
         var now = time.GetUtcNow();
         var today = BusinessTime.Today(now);
-        if (req.StartDate > req.EndDate || req.EndDate < today)
-            throw new RuleViolation("league_dates_invalid", "The start must not be after the end, and the end must not be in the past.");
-
-        // Both ends must fall in ONE season.
-        var all = await db.Seasons.AsNoTracking().ToListAsync(ct);
-        var season = all.FirstOrDefault(s => s.StartDate <= req.StartDate && req.EndDate <= s.EndDate)
-                     ?? throw new RuleViolation("dates_outside_season", "The league dates must fit within a single season.");
+        var (name, description, season) = await ValidateNewLeagueAsync(req.Name, req.Description, req.StartDate, req.EndDate, today, ct);
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        await LockSlotsAsync(userId, ct);
+        await LockSlotsAsync([userId], ct);
         await EnsureFreeSlotAsync(userId, today, ct);
 
         var league = new League
@@ -69,6 +61,74 @@ public class LeagueService(AppDbContext db, RulesOptions rules, TimeProvider tim
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         return Summarize(league, today);
+    }
+
+    /// <summary>
+    /// Creates a new league from an ended one, carrying over its active members (creator included). The creator needs a
+    /// free slot (else <c>league_limit</c>, nothing created); other members without one are skipped and listed.
+    /// Slot locks for every carried-over user are taken in ascending id order to avoid deadlocks with concurrent creates/accepts.
+    /// </summary>
+    public async Task<RenewLeagueResponse> RenewAsync(Guid userId, Guid leagueId, RenewLeagueRequest req, CancellationToken ct)
+    {
+        var old = await db.Leagues.AsNoTracking().SingleOrDefaultAsync(l => l.Id == leagueId, ct)
+                  ?? throw new LeagueNotFoundException();
+        if (old.CreatorId != userId)
+            throw new NotLeagueCreatorException();
+
+        var now = time.GetUtcNow();
+        var today = BusinessTime.Today(now);
+        if (today <= old.EndDate)
+            throw new RuleViolation("league_not_ended", "Only an ended league can be renewed.");
+
+        var (name, description, season) = await ValidateNewLeagueAsync(req.Name ?? old.Name, old.Description, req.StartDate, req.EndDate, today, ct);
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var memberIds = await db.LeagueMemberships.AsNoTracking()
+            .Where(m => m.LeagueId == leagueId && m.LeftAt == null)
+            .Select(m => m.UserId).OrderBy(id => id).ToListAsync(ct);
+        await LockSlotsAsync(memberIds, ct);
+
+        var carried = new List<Guid>();
+        var skipped = new List<Guid>();
+        foreach (var id in memberIds)
+        {
+            if (await HasFreeSlotAsync(id, today, ct)) carried.Add(id);
+            else if (id == userId) throw SlotLimit();
+            else skipped.Add(id);
+        }
+
+        var league = new League
+        {
+            Id = Guid.NewGuid(), SeasonId = season.Id, CreatorId = userId, Name = name, Description = description,
+            StartDate = req.StartDate, EndDate = req.EndDate, CoverBlobName = old.CoverBlobName,
+        };
+        db.Leagues.Add(league);
+        db.LeagueMemberships.AddRange(carried.Select(id => new LeagueMembership { LeagueId = league.Id, UserId = id, JoinedAt = now }));
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        var s = Summarize(league, today);
+        return new RenewLeagueResponse(s.Id, s.Name, s.Description, s.StartDate, s.EndDate, s.Status, skipped);
+    }
+
+    /// <summary>Shared by create and renew: name, description and dates (inside one season, end not in the past).</summary>
+    async Task<(string Name, string? Description, Season Season)> ValidateNewLeagueAsync(
+        string? rawName, string? rawDescription, DateOnly start, DateOnly end, DateOnly today, CancellationToken ct)
+    {
+        var name = rawName?.Trim() ?? "";
+        if (name.Length is 0 or > MaxNameLength)
+            throw new RuleViolation("league_name_invalid", $"The name must have 1 to {MaxNameLength} characters.");
+        var description = string.IsNullOrWhiteSpace(rawDescription) ? null : rawDescription.Trim();
+        if (description is { Length: > MaxDescriptionLength })
+            throw new RuleViolation("league_description_invalid", $"The description must have at most {MaxDescriptionLength} characters.");
+
+        if (start > end || end < today)
+            throw new RuleViolation("league_dates_invalid", "The start must not be after the end, and the end must not be in the past.");
+
+        // Both ends must fall in ONE season.
+        var all = await db.Seasons.AsNoTracking().ToListAsync(ct);
+        var season = all.FirstOrDefault(s => s.StartDate <= start && end <= s.EndDate)
+                     ?? throw new RuleViolation("dates_outside_season", "The league dates must fit within a single season.");
+        return (name, description, season);
     }
 
     public async Task<InviteResponse> CreateInviteAsync(Guid userId, Guid leagueId, CancellationToken ct)
@@ -101,7 +161,7 @@ public class LeagueService(AppDbContext db, RulesOptions rules, TimeProvider tim
         var today = BusinessTime.Today(now);
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        await LockSlotsAsync(userId, ct);
+        await LockSlotsAsync([userId], ct);
 
         var hash = HashToken(token);
         var invite = await db.LeagueInvites.AsNoTracking().SingleOrDefaultAsync(i => i.TokenHash == hash, ct)
@@ -165,20 +225,32 @@ public class LeagueService(AppDbContext db, RulesOptions rules, TimeProvider tim
     }
 
     /// <summary>A membership occupies a slot while not left and now &lt; end+1 00:00 Sao Paulo, i.e. today &lt;= EndDate.</summary>
-    async Task EnsureFreeSlotAsync(Guid userId, DateOnly today, CancellationToken ct)
+    async Task<bool> HasFreeSlotAsync(Guid userId, DateOnly today, CancellationToken ct)
     {
         var used = await (from m in db.LeagueMemberships.AsNoTracking()
                           join l in db.Leagues.AsNoTracking() on m.LeagueId equals l.Id
                           where m.UserId == userId && m.LeftAt == null && l.EndDate >= today
                           select m.LeagueId).CountAsync(ct);
-        if (used >= rules.MaxActiveLeaguesPerUser)
-            throw new RuleViolation("league_limit", $"You can be in at most {rules.MaxActiveLeaguesPerUser} active or upcoming leagues.");
+        return used < rules.MaxActiveLeaguesPerUser;
     }
 
-    Task LockSlotsAsync(Guid userId, CancellationToken ct)
+    async Task EnsureFreeSlotAsync(Guid userId, DateOnly today, CancellationToken ct)
     {
-        var key = userId.ToString("D");
-        return db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({AdvisoryLocks.LeagueSlots}, hashtext({key}))", ct);
+        if (!await HasFreeSlotAsync(userId, today, ct))
+            throw SlotLimit();
+    }
+
+    RuleViolation SlotLimit() =>
+        new("league_limit", $"You can be in at most {rules.MaxActiveLeaguesPerUser} active or upcoming leagues.");
+
+    /// <summary>Takes the slot locks in the order given; callers pass a single id or ids sorted ascending.</summary>
+    async Task LockSlotsAsync(IReadOnlyList<Guid> userIds, CancellationToken ct)
+    {
+        foreach (var id in userIds)
+        {
+            var key = id.ToString("D");
+            await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({AdvisoryLocks.LeagueSlots}, hashtext({key}))", ct);
+        }
     }
 
     static LeagueSummary Summarize(League l, DateOnly today) =>

@@ -69,6 +69,7 @@ Docker must be able to pull `postgres:17` and `testcontainers/ryuk` from Docker 
 
 - `POST /leagues`, `POST /leagues/{id}/invites` (creator only, 403 otherwise), `POST /invites/{token}/accept`, `POST /leagues/{id}/leave`, `GET /me/leagues` (all Player policy, `LeagueService`).
 - A membership occupies a slot while `LeftAt == null` and today (Sao Paulo) <= league end date; limit `Rules:MaxActiveLeaguesPerUser`. Create and accept run in one transaction under `pg_advisory_xact_lock(2, hashtext(userId))`; a failed accept check rolls the invite claim back.
+- `POST /leagues/{id}/renew` `{name?, startDate, endDate}` (creator only; 404 `league_not_found`, 403 `not_league_creator`, 422 `league_not_ended`): new league with the active members and the cover; slot locks for all members taken in ascending id order; creator without slot -> `league_limit` (nothing created), other members without slot listed in `skippedUserIds`.
 - Invite tokens: 32 random bytes base64url; only the SHA-256 hex hash is stored. Link base from `Invites:BaseUrl`.
 
 ## Standings and trophies
