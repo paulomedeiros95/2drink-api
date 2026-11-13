@@ -24,6 +24,21 @@ public class PresenceTests
         Assert.Equal("out_of_range", ex.Code);
     }
 
+    [Fact] public void Exactly_70m_with_zero_accuracy_ok() => G.EnsureInside(new(North(70), 0, false), Bar);
+    [Fact] public void Just_over_70m_with_zero_accuracy_rejected() {
+        var ex = Assert.Throws<RuleViolation>(() => G.EnsureInside(new(North(70.5), 0, false), Bar));
+        Assert.Equal("out_of_range", ex.Code);
+    }
+
+    [Fact] public void NaN_latitude_fails_closed() =>
+        Assert.Equal("out_of_range", Assert.Throws<RuleViolation>(() => G.EnsureInside(new(new(double.NaN, Bar.Lng), 5, false), Bar)).Code);
+    [Fact] public void NaN_longitude_fails_closed() =>
+        Assert.Equal("out_of_range", Assert.Throws<RuleViolation>(() => G.EnsureInside(new(new(Bar.Lat, double.NaN), 5, false), Bar)).Code);
+    [Fact] public void NaN_accuracy_fails_closed() =>
+        Assert.Equal("out_of_range", Assert.Throws<RuleViolation>(() => G.EnsureInside(new(North(1), double.NaN, false), Bar)).Code);
+    [Fact] public void Infinite_accuracy_fails_closed() =>
+        Assert.Equal("out_of_range", Assert.Throws<RuleViolation>(() => G.EnsureInside(new(North(1), double.PositiveInfinity, false), Bar)).Code);
+
     [Fact] public void Distance_is_about_111km_per_degree_latitude() {
         var d = Geofence.DistanceMeters(new(0, 0), new(1, 0));
         Assert.InRange(d, 111_100, 111_300);

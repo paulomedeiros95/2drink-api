@@ -17,9 +17,13 @@ public sealed class Geofence(RulesOptions o)
         if (fix.IsMocked)
             throw new RuleViolation("mock_location", "Mocked location is not allowed.");
 
+        // Fail closed: non-finite input must never pass the check.
+        if (!double.IsFinite(fix.Point.Lat) || !double.IsFinite(fix.Point.Lng) || !double.IsFinite(fix.AccuracyMeters))
+            throw new RuleViolation("out_of_range", "Device position or accuracy is invalid.");
+
         var accuracyMargin = Math.Min(Math.Max(fix.AccuracyMeters, 0), o.MaxAccuracyMarginMeters);
         var allowed = o.RadiusMeters + accuracyMargin;
-        if (DistanceMeters(fix.Point, venue) > allowed)
+        if (!(DistanceMeters(fix.Point, venue) <= allowed))
             throw new RuleViolation("out_of_range", "Device is outside the venue radius.");
     }
 
