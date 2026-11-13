@@ -4,13 +4,17 @@
 
 ## Docs (spec and plans)
 
-The spec and implementation plans live in the docs repo `https://github.com/paulomedeiros95/2drink-app-docs`
-(locally at `C:/Source/Projects/2DRINK/docs/2drink-app-docs`):
+The docs repo `https://github.com/paulomedeiros95/2drink-app-docs` is a git submodule at `docs/`.
+After cloning, run `git submodule update --init`.
 
-- Spec: `docs/superpowers/specs/2026-11-13-2drink-mvp-design.md`
-- Plans: `docs/superpowers/plans/`
+- Spec: `docs/docs/superpowers/specs/2026-11-13-2drink-mvp-design.md`
+- Plans: `docs/docs/superpowers/plans/`
+- Setup guide: `docs/docs/guias/`
 
-Once the docs repo is pushed it will be added as a git submodule at `docs/` (so the paths become `docs/docs/superpowers/...`).
+## Local setup
+
+Docker must be able to pull `postgres:17` and `testcontainers/ryuk` from Docker Hub. If a pull says
+"authentication required", run `docker logout` then `docker login`.
 
 ## Conventions
 
