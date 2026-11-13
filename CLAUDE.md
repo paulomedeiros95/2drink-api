@@ -25,3 +25,11 @@ Docker must be able to pull `postgres:17` and `testcontainers/ryuk` from Docker 
 - Secrets and connection strings stay out of the repo (user-secrets in dev, Key Vault in prod). Connection string key: `ConnectionStrings:Default`.
 - Tests use Testcontainers (PostgreSQL) via `ApiFactory`; Docker must be running.
 - Build with `dotnet build -warnaserror`; run tests with `dotnet test`.
+
+## Auth configuration
+
+- The API issues its own HS256 JWTs (issuer `2drink-api`, audience `2drink-app`, access 1h, refresh 60 days). The signing key is never committed: in dev run
+  `dotnet user-secrets set "Jwt:SigningKey" "<random 64 chars>" --project src/TwoDrink.Api` (min 32 bytes; Key Vault in prod). Tests set their own key in `ApiFactory`.
+- Google/Apple audiences come from config: `Auth:Google:ClientIds` (array) and `Auth:Apple:Audiences` (array: bundle ID / Service ID). Tests replace `IExternalTokenValidator` with a fake (`valid:<subject>`).
+- Endpoints for players use the `"Player"` authorization policy (complete profile required). Tests get a ready player with `ApiFactory.CreatePlayerClientAsync(subject)`.
+- Test clock (`ApiFactory.Clock`) only moves forward; keep it in UTC (Npgsql rejects non-zero offsets).

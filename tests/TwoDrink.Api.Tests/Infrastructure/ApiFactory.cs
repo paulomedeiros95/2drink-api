@@ -6,9 +6,17 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Time.Testing;
 using Npgsql;
 using Testcontainers.PostgreSql;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text.Json;
+using TwoDrink.Domain.Rules;
+using TwoDrink.Infrastructure.Auth;
 using TwoDrink.Infrastructure.Data;
 
 namespace TwoDrink.Api.Tests.Infrastructure;
+
+/// <summary>A signed-in player with a complete profile.</summary>
+public record PlayerClient(HttpClient Http, Guid UserId, Guid LedgerAccountId);
 
 public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 {
@@ -18,7 +26,7 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17").Build();
 
     public FakeTimeProvider Clock { get; } =
-        new(new DateTimeOffset(2027, 2, 6, 20, 0, 0, TimeSpan.FromHours(-3)));
+        new(new DateTimeOffset(2027, 2, 6, 20, 0, 0, TimeSpan.FromHours(-3)).ToUniversalTime()); // UTC: Npgsql rejects other offsets
 
     /// <summary>Container superuser (database owner): migrations, seeding that needs privileges, tampering tests.</summary>
     public string OwnerConnectionString => _postgres.GetConnectionString();
@@ -57,10 +65,41 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         builder.UseSetting("ConnectionStrings:Default", AppConnectionString);
         builder.UseSetting("Ledger:VerificationJobEnabled", "false");
+        builder.UseSetting("Jwt:SigningKey", "test-signing-key-test-signing-key-test-signing-key-0123456789");
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(Clock);
+            services.RemoveAll<IExternalTokenValidator>();
+            services.AddSingleton<IExternalTokenValidator, FakeExternalTokenValidator>();
         });
+    }
+
+    /// <summary>
+    /// Logs in via the fake validator (<c>valid:&lt;subject&gt;</c> on /auth/google), completes the profile as an adult at the
+    /// current <see cref="Clock"/>, and returns a client carrying the bearer token.
+    /// </summary>
+    public async Task<PlayerClient> CreatePlayerClientAsync(string subject = "p1")
+    {
+        var http = CreateClient();
+        var login = await http.PostAsJsonAsync("/auth/google", new { idToken = "valid:" + subject });
+        login.EnsureSuccessStatusCode();
+        var tokens = await login.Content.ReadFromJsonAsync<JsonElement>();
+        http.DefaultRequestHeaders.Authorization =
+            new AuthenticationHeaderValue("Bearer", tokens.GetProperty("accessToken").GetString());
+
+        var adultBirth = BusinessTime.Today(Clock.GetUtcNow()).AddYears(-30);
+        var put = await http.PutAsJsonAsync("/me/profile", new
+        {
+            displayName = subject,
+            birthDate = adultBirth,
+            acceptedTermsVersion = "v1",
+            locale = "pt-BR",
+        });
+        put.EnsureSuccessStatusCode();
+
+        await using var db = NewDb();
+        var user = db.Users.Single(u => u.Provider == ExternalProvider.Google && u.Subject == subject);
+        return new PlayerClient(http, user.Id, user.LedgerAccountId);
     }
 }
