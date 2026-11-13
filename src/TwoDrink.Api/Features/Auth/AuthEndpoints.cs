@@ -1,6 +1,7 @@
 using Google.Apis.Auth;
 using Microsoft.IdentityModel.Tokens;
 using TwoDrink.Infrastructure.Auth;
+using TwoDrink.Api.Startup;
 
 namespace TwoDrink.Api.Features.Auth;
 
@@ -14,9 +15,13 @@ public static class AuthEndpoints
     {
         var g = app.MapGroup("/auth").AllowAnonymous();
         g.MapPost("/google", (GoogleLoginRequest req, IExternalTokenValidator v, SessionService s, ILoggerFactory logs, CancellationToken ct) =>
-            Login(ExternalProvider.Google, req.IdToken, v, s, logs, ct));
+            Login(ExternalProvider.Google, req.IdToken, v, s, logs, ct))
+            .Doc("Auth", "Entrar com Google", "Troca um idToken do Google por tokens da API. Cria o usuario no primeiro login.")
+            .Produces<AuthTokens>().Problems(401, 503);
         g.MapPost("/apple", (AppleLoginRequest req, IExternalTokenValidator v, SessionService s, ILoggerFactory logs, CancellationToken ct) =>
-            Login(ExternalProvider.Apple, req.IdentityToken, v, s, logs, ct));
+            Login(ExternalProvider.Apple, req.IdentityToken, v, s, logs, ct))
+            .Doc("Auth", "Entrar com Apple", "Troca um identityToken da Apple por tokens da API. Cria o usuario no primeiro login.")
+            .Produces<AuthTokens>().Problems(401, 503);
         g.MapPost("/refresh", async (RefreshRequest req, SessionService s, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(req.RefreshToken))
@@ -29,7 +34,8 @@ public static class AuthEndpoints
             {
                 return Unauthorized("invalid_refresh_token");
             }
-        });
+        }).Doc("Auth", "Renovar tokens", "Troca um refreshToken (uso unico) por um novo par de tokens.")
+          .Produces<AuthTokens>().Problems(401);
         return app;
     }
 

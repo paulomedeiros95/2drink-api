@@ -41,6 +41,7 @@ if (builder.Configuration.GetValue("Trophies:AwarderJobEnabled", true))
 builder.Services.AddRequiredConfigValidation();
 builder.Services.AddForwardedHeadersFromConfig();
 builder.Services.AddRateLimitingFromConfig();
+builder.Services.AddApiDocs(builder.Environment); // Development only
 
 var app = builder.Build();
 
@@ -48,6 +49,7 @@ var app = builder.Build();
 app.UseForwardedHeaders();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+app.UseApiDocsUi(); // Development only; static UI files, before the fallback policy
 app.UseAuthentication();
 app.UseRateLimiter(); // after authentication (partitions by "sub"), before authorization (limits rejected calls too)
 app.UseAuthorization();
@@ -61,6 +63,7 @@ app.MapCheckInIntentEndpoints();
 app.MapCheckInEndpoints();
 app.MapLeagueEndpoints();
 app.MapInviteEndpoints();
+app.MapApiDocs(); // Development only
 
 app.Run();
 

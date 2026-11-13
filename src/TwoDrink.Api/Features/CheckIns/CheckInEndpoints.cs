@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using TwoDrink.Api.Features.Auth;
+using TwoDrink.Api.Startup;
 using TwoDrink.Infrastructure.Storage;
 
 namespace TwoDrink.Api.Features.CheckIns;
@@ -26,7 +27,9 @@ public static class CheckInEndpoints
                 logs.CreateLogger("CheckIns").LogWarning(e, "Photo storage unavailable while confirming a check-in");
                 return StorageUnavailable();
             }
-        }).RequireAuthorization(AuthSetup.PlayerPolicy);
+        }).RequireAuthorization(AuthSetup.PlayerPolicy)
+          .Doc("CheckIns", "Confirmar check-in", "Depois do upload do JPEG: confirma o intent, congela a selfie e credita os pontos. Idempotente. 404 intent_not_found; 422 photo_invalid e regras de bebida; 503 storage_unavailable.")
+          .Produces<ConfirmCheckInResponse>().PlayerProblems(404, 422, 503);
 
         app.MapPost("/checkins/{checkInId:guid}/drinks", async (Guid checkInId, ComplementRequest req,
             ClaimsPrincipal principal, CheckInService checkIns, CancellationToken ct) =>
@@ -41,7 +44,9 @@ public static class CheckInEndpoints
                 return Results.Problem(statusCode: StatusCodes.Status404NotFound, title: "Check-in not found",
                     extensions: new Dictionary<string, object?> { ["code"] = "checkin_not_found" });
             }
-        }).RequireAuthorization(AuthSetup.PlayerPolicy);
+        }).RequireAuthorization(AuthSetup.PlayerPolicy)
+          .Doc("CheckIns", "Adicionar bebidas a um check-in", "Complemento de bebidas ate fechar a janela do check-in. 404 checkin_not_found; 422 checkin_closed / drink_limit.")
+          .Produces<ComplementResponse>().PlayerProblems(404, 422);
 
         return app;
     }

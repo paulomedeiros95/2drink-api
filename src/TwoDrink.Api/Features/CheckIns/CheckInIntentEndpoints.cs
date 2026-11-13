@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using TwoDrink.Api.Features.Auth;
+using TwoDrink.Api.Startup;
 using TwoDrink.Api.Features.Venues;
 using TwoDrink.Api.Jobs;
 using TwoDrink.Domain.Presence;
@@ -82,7 +83,9 @@ public static class CheckInIntentEndpoints
             await db.SaveChangesAsync(ct);
 
             return Results.Ok(new CheckInIntentResponse(id, uploadUrl, intent.ExpiresAt));
-        }).RequireAuthorization(AuthSetup.PlayerPolicy);
+        }).RequireAuthorization(AuthSetup.PlayerPolicy)
+          .Doc("CheckIns", "Iniciar check-in (intent)", "Valida presenca (geofence) e intervalos; devolve uploadUrl (SAS de escrita) para enviar o JPEG da selfie direto ao Blob Storage. Vale 10 min. 404 venue_not_found; 422 por regra (fora do raio, cooldown...); 503 storage_unavailable.")
+          .Produces<CheckInIntentResponse>().PlayerProblems(404, 422, 503);
 
         return app;
     }

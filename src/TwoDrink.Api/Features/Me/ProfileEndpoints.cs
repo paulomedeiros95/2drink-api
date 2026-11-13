@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using TwoDrink.Api.Features.Auth;
+using TwoDrink.Api.Startup;
 using TwoDrink.Domain.Profiles;
 using TwoDrink.Domain.Rules;
 using TwoDrink.Infrastructure.Data;
@@ -26,14 +27,18 @@ public static class ProfileEndpoints
                 .SetProperty(u => u.AcceptedTermsVersion, profile.AcceptedTermsVersion)
                 .SetProperty(u => u.Locale, profile.Locale), ct);
             return updated == 1 ? Results.Ok(new { profileComplete = true }) : Results.Unauthorized();
-        }).RequireAuthorization();
+        }).RequireAuthorization()
+          .Doc("Me", "Completar perfil", "Define nome, data de nascimento (18+), versao dos termos e idioma (pt-BR ou en). Qualquer usuario autenticado pode chamar.")
+          .Produces(200).Problems(401, 422);
 
         g.MapGet("", async (HttpContext http, AppDbContext db, CancellationToken ct) =>
         {
             var id = UserId(http);
             var user = await db.Users.AsNoTracking().SingleAsync(u => u.Id == id, ct);
             return Results.Ok(new { id = user.Id, displayName = user.DisplayName, locale = user.Locale });
-        }).RequireAuthorization(AuthSetup.PlayerPolicy);
+        }).RequireAuthorization(AuthSetup.PlayerPolicy)
+          .Doc("Me", "Meu perfil", "Dados basicos do jogador logado (perfil completo exigido).")
+          .Produces(200).PlayerProblems();
 
         return app;
     }

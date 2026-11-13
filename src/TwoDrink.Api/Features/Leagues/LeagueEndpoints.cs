@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using TwoDrink.Api.Features.Auth;
+using TwoDrink.Api.Startup;
 using TwoDrink.Api.Jobs;
 using TwoDrink.Infrastructure.Data;
 
@@ -21,7 +22,9 @@ public static class LeagueEndpoints
     {
         app.MapPost("/leagues", async (CreateLeagueRequest req, ClaimsPrincipal principal, LeagueService leagues, CancellationToken ct) =>
             Results.Ok(await leagues.CreateAsync(UserId(principal), req, ct)))
-            .RequireAuthorization(AuthSetup.PlayerPolicy);
+            .RequireAuthorization(AuthSetup.PlayerPolicy)
+          .Doc("Leagues", "Criar liga", "Cria uma liga com datas dentro da temporada. 422 league_limit, dates_outside_season etc.")
+          .Produces<LeagueSummary>().PlayerProblems(422);
 
         app.MapPost("/leagues/{leagueId:guid}/invites", async (Guid leagueId, ClaimsPrincipal principal, LeagueService leagues, CancellationToken ct) =>
         {
@@ -38,7 +41,9 @@ public static class LeagueEndpoints
                 return Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Only the creator can invite",
                     extensions: new Dictionary<string, object?> { ["code"] = "not_league_creator" });
             }
-        }).RequireAuthorization(AuthSetup.PlayerPolicy);
+        }).RequireAuthorization(AuthSetup.PlayerPolicy)
+          .Doc("Leagues", "Criar convite", "Gera link de convite (so o criador). 404 league_not_found; 403 not_league_creator; 422 league_ended.")
+          .Produces<InviteResponse>().PlayerProblems(404, 422);
 
         app.MapPost("/leagues/{leagueId:guid}/renew", async (Guid leagueId, RenewLeagueRequest req, ClaimsPrincipal principal, LeagueService leagues, CancellationToken ct) =>
         {
@@ -55,7 +60,9 @@ public static class LeagueEndpoints
                 return Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Only the creator can renew",
                     extensions: new Dictionary<string, object?> { ["code"] = "not_league_creator" });
             }
-        }).RequireAuthorization(AuthSetup.PlayerPolicy);
+        }).RequireAuthorization(AuthSetup.PlayerPolicy)
+          .Doc("Leagues", "Renovar liga", "Cria nova liga com os membros ativos (so o criador; so liga encerrada). 404 league_not_found; 403 not_league_creator; 422 league_not_ended / league_limit.")
+          .Produces<RenewLeagueResponse>().PlayerProblems(404, 422);
 
         app.MapPost("/leagues/{leagueId:guid}/leave", async (Guid leagueId, ClaimsPrincipal principal, LeagueService leagues, CancellationToken ct) =>
         {
@@ -68,11 +75,15 @@ public static class LeagueEndpoints
             {
                 return NotFound("Not a member", "not_member");
             }
-        }).RequireAuthorization(AuthSetup.PlayerPolicy);
+        }).RequireAuthorization(AuthSetup.PlayerPolicy)
+          .Doc("Leagues", "Sair da liga", "Marca a saida do jogador. 404 not_member.")
+          .Produces(204).PlayerProblems(404);
 
         app.MapGet("/me/leagues", async (ClaimsPrincipal principal, LeagueService leagues, CancellationToken ct) =>
             Results.Ok(await leagues.MineAsync(UserId(principal), ct)))
-            .RequireAuthorization(AuthSetup.PlayerPolicy);
+            .RequireAuthorization(AuthSetup.PlayerPolicy)
+          .Doc("Leagues", "Minhas ligas", "Ligas das quais o jogador participa.")
+          .Produces<IReadOnlyList<MyLeague>>().PlayerProblems();
 
         app.MapGet("/leagues/{leagueId:guid}/standings", async (Guid leagueId, ClaimsPrincipal principal, AppDbContext db, StandingsQuery standings, CancellationToken ct) =>
         {
@@ -81,7 +92,9 @@ public static class LeagueEndpoints
             var member = await db.LeagueMemberships.AsNoTracking().AnyAsync(m => m.LeagueId == leagueId && m.UserId == userId && m.LeftAt == null, ct);
             var items = member ? await standings.ForLeagueAsync(leagueId, ct) : null;
             return items is null ? NotFound("Not a member", "not_member") : Results.Ok(items);
-        }).RequireAuthorization(AuthSetup.PlayerPolicy);
+        }).RequireAuthorization(AuthSetup.PlayerPolicy)
+          .Doc("Leagues", "Classificacao da liga", "Ranking da liga (empates 1,1,3). 404 not_member para liga desconhecida ou nao-membro.")
+          .Produces<IReadOnlyList<StandingItem>>().PlayerProblems(404);
 
         app.MapGet("/me/trophies", async (ClaimsPrincipal principal, AppDbContext db, CancellationToken ct) =>
         {
@@ -92,7 +105,9 @@ public static class LeagueEndpoints
                               orderby t.AwardedAt descending, l.Name
                               select new { LeagueId = l.Id, LeagueName = l.Name, t.AwardedAt }).ToListAsync(ct);
             return Results.Ok(rows);
-        }).RequireAuthorization(AuthSetup.PlayerPolicy);
+        }).RequireAuthorization(AuthSetup.PlayerPolicy)
+          .Doc("Leagues", "Meus trofeus", "Trofeus (Golden Trophy) do jogador, mais novos primeiro.")
+          .Produces(200).PlayerProblems();
 
         return app;
     }

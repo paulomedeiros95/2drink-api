@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using TwoDrink.Api.Features.Auth;
+using TwoDrink.Api.Startup;
 using TwoDrink.Domain.Errors;
 using TwoDrink.Infrastructure.Data;
 
@@ -40,7 +41,9 @@ public static class LedgerEndpoints
                 reason = e.Reason,
                 createdAt = e.CreatedAt,
             }));
-        }).RequireAuthorization(AuthSetup.PlayerPolicy);
+        }).RequireAuthorization(AuthSetup.PlayerPolicy)
+          .Doc("Me", "Meu extrato de pontos", "Extrato (ledger) proprio, mais novo primeiro. before = cursor de Sequence; limit 1..200 (422 invalid_paging).")
+          .Produces(200).PlayerProblems(422);
 
         return app;
     }

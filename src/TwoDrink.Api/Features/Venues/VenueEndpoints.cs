@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.Extensions.Caching.Memory;
 using TwoDrink.Api.Features.Auth;
+using TwoDrink.Api.Startup;
 using TwoDrink.Api.Features.Seasons;
 using TwoDrink.Domain.Errors;
 using TwoDrink.Domain.Presence;
@@ -60,7 +61,9 @@ public static class VenueEndpoints
             var tierById = await tiers.CurrentTiersAsync(list.Select(v => v.Id).ToList(), time.GetUtcNow(), ct);
             return Results.Ok(list.Select(v => new NearbyVenue(v.Id, v.Name, v.Address, v.Lat, v.Lng,
                 tierById.GetValueOrDefault(v.Id, Tier.Default).ToString())));
-        }).RequireAuthorization(AuthSetup.PlayerPolicy);
+        }).RequireAuthorization(AuthSetup.PlayerPolicy)
+          .Doc("Venues", "Bares por perto", "Lista bares num raio ao redor de lat/lng via Google Places (cache de 1h por ~110 m). 422 invalid_location; 503 places_unavailable quando o Google falha ou a chave nao esta configurada.")
+          .Produces<IEnumerable<NearbyVenue>>().PlayerProblems(422, 503);
 
         return app;
     }
