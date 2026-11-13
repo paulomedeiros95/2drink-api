@@ -2,7 +2,9 @@ using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using TwoDrink.Api.Features.Health;
+using TwoDrink.Api.Jobs;
 using TwoDrink.Infrastructure.Data;
+using TwoDrink.Infrastructure.Ledger;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,12 +12,13 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddProblemDetails();
 
 // The connection string is read lazily so tests can override it after the host is configured.
-builder.Services.AddDbContext<AppDbContext>((sp, options) =>
-    options
-        .UseNpgsql(sp.GetRequiredService<IConfiguration>().GetConnectionString("Default"))
-        .UseSnakeCaseNamingConvention());
+builder.Services.AddAppDbContext(sp => sp.GetRequiredService<IConfiguration>().GetConnectionString("Default"));
 
 builder.Services.AddHealth();
+builder.Services.AddScoped<LedgerWriter>();
+builder.Services.AddScoped<LedgerVerifier>();
+if (builder.Configuration.GetValue("Ledger:VerificationJobEnabled", true))
+    builder.Services.AddHostedService<LedgerVerificationJob>();
 
 builder.Services.AddRateLimiter(options =>
 {
