@@ -80,6 +80,7 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
         builder.UseSetting("ConnectionStrings:Default", AppConnectionString);
         builder.UseSetting("Ledger:VerificationJobEnabled", "false");
         builder.UseSetting("CheckIns:CloserJobEnabled", "false");
+        builder.UseSetting("CheckIns:IntentCleanupJobEnabled", "false");
         builder.UseSetting("Trophies:AwarderJobEnabled", "false");
         builder.UseSetting("Storage:ConnectionString", _azurite.GetConnectionString());
         builder.UseSetting("Storage:AllowHttpSas", "true");

@@ -227,6 +227,21 @@ public class CheckInConfirmTests(ApiFactory factory) : CheckInTestBase(factory)
         Assert.Equal(0, await CheckInCount(Me));
     }
 
+    [Theory]
+    [InlineData(5 * 1024 * 1024 + 1, "image/jpeg")]
+    [InlineData(13, "image/png")]
+    public async Task Invalid_photo_is_rejected_before_any_copy(int size, string contentType)
+    {
+        var intent = await CreateIntent(Me, Bar, InsideBar);
+        await Upload(intent.UploadUrl, new byte[size], contentType);
+        var copiesBefore = F.PhotoStorage.CopyCalls;
+
+        var res = await PostConfirm(Me, intent.IntentId, InsideBar, (DrinkType.Beer, 1));
+
+        await AssertProblem(res, 422, "photo_invalid");
+        Assert.Equal(copiesBefore, F.PhotoStorage.CopyCalls);
+    }
+
     [Fact]
     public async Task Expired_intent_rejected()
     {

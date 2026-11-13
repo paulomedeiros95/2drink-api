@@ -128,6 +128,10 @@ namespace TwoDrink.Infrastructure.Data.Migrations
                     b.HasKey("Id")
                         .HasName("pk_check_in_intents");
 
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("ix_check_in_intents_expires_at")
+                        .HasFilter("confirmed_check_in_id IS NULL");
+
                     b.HasIndex("UserId")
                         .HasDatabaseName("ix_check_in_intents_user_id");
 

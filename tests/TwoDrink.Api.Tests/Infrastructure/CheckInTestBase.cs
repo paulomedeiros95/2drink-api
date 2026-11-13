@@ -47,6 +47,7 @@ public abstract class CheckInTestBase : IClassFixture<ApiFactory>, IAsyncLifetim
         F = factory;
         F.Places.Reset();
         F.PhotoStorage.FailCopy = false;
+        F.PhotoStorage.FailDelete = false;
         F.Clock.SetUtcNow(TestClock.DefaultStart);
     }
 

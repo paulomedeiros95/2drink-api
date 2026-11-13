@@ -95,7 +95,11 @@ public class CheckInService(
         // 5. drinks
         var lines = ValidateDrinks(req.Drinks);
 
-        // 6. photo: freeze it first (copy out of reach of the upload SAS), then validate exactly what was frozen
+        // 6. photo: reject a missing/oversized/non-JPEG upload before copying anything, then freeze it (copy out of reach
+        //    of the upload SAS) and validate again exactly what was frozen (the upload could change in between).
+        var source = await storage.GetInfoAsync(intent.BlobName, ct)
+                     ?? throw new RuleViolation("photo_missing", "The selfie was not uploaded.");
+        EnsureValidPhoto(source);
         var checkInId = Guid.NewGuid();
         var finalBlob = $"final/{checkInId}.jpg";
         var photo = await storage.CopyAsync(intent.BlobName, finalBlob, ct)
@@ -103,8 +107,7 @@ public class CheckInService(
         ConfirmCheckInResponse result;
         try
         {
-            if (!string.Equals(photo.ContentType, PhotoContentType, StringComparison.OrdinalIgnoreCase) || photo.SizeBytes > MaxPhotoBytes)
-                throw new RuleViolation("photo_invalid", "The selfie must be a JPEG of at most 5 MB.");
+            EnsureValidPhoto(photo);
 
             // 7–8. check-in, badge and ledger entries, committed together
             result = await WriteAsync(userId, intent, venue.Id, checkInId, finalBlob, lines, now, ct);
@@ -231,6 +234,12 @@ public class CheckInService(
                 .Select(e => e.Points).FirstOrDefaultAsync(ct);
         return new ConfirmCheckInResponse(checkInId, points,
             badge is null ? null : new BadgeAwarded(badge.Tier.ToString(), badge.ArtUrl, badgePoints));
+    }
+
+    private static void EnsureValidPhoto(PhotoInfo photo)
+    {
+        if (!string.Equals(photo.ContentType, PhotoContentType, StringComparison.OrdinalIgnoreCase) || photo.SizeBytes > MaxPhotoBytes)
+            throw new RuleViolation("photo_invalid", "The selfie must be a JPEG of at most 5 MB.");
     }
 
     /// <summary>Parses and merges the lines (same type summed); 1..MaxDrinksPerCheckIn in total, each quantity ≥ 1.</summary>

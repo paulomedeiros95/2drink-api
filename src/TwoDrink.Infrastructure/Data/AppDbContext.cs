@@ -105,6 +105,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.ToTable("check_in_intents");
             e.Property(x => x.BlobName).HasMaxLength(200);
             e.HasIndex(x => x.UserId);
+            e.HasIndex(x => x.ExpiresAt).HasFilter("confirmed_check_in_id IS NULL"); // IntentCleanup
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<Venue>().WithMany().HasForeignKey(x => x.VenueId).OnDelete(DeleteBehavior.Restrict);
         });

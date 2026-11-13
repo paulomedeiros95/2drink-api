@@ -25,6 +25,7 @@ public static class CheckInIntentEndpoints
         services.AddScoped<CheckInCooldown>();
         services.AddSingleton<DrinkCatalog>();
         services.AddScoped<HydrationReconciler>();
+        services.AddScoped<IntentCleanup>();
         services.AddScoped<CheckInCloser>();
         services.AddScoped<CheckInService>();
         services.AddSingleton<BlobPhotoStorage>();
