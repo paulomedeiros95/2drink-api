@@ -9,7 +9,7 @@ namespace TwoDrink.Api.Features.Leagues;
 public record StandingItem(Guid UserId, string DisplayName, decimal Points, int DistinctVenues, int Rank);
 
 /// <summary>
-/// League standings computed from the ledger in one SQL query. Per member with <c>LeftAt == null</c>: entries of their account with
+/// League standings computed from the ledger in one SQL query. Per member whose membership is current or was current at the league end (<c>LeftAt == null || LeftAt >= end</c>): entries of their account with
 /// <c>CreatedAt</c> in [max(JoinedAt, start), end+1 day), points = sum of all types (reversals subtract), distinct venues = among CheckIn entries.
 /// </summary>
 public class StandingsQuery(AppDbContext db)
@@ -24,7 +24,7 @@ public class StandingsQuery(AppDbContext db)
 
         var rows = await (from m in db.LeagueMemberships.AsNoTracking()
                           join u in db.Users.AsNoTracking() on m.UserId equals u.Id
-                          where m.LeagueId == leagueId && m.LeftAt == null
+                          where m.LeagueId == leagueId && (m.LeftAt == null || m.LeftAt >= endUtc)
                           let windowStart = m.JoinedAt > startUtc ? m.JoinedAt : startUtc
                           select new
                           {

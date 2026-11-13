@@ -230,11 +230,11 @@ public class StandingsTests(ApiFactory factory) : CheckInTestBase(factory)
         await ConfirmAt(Me, Bar, InsideBar, (DrinkType.Beer, 3));
         await ConfirmAt(b, Bar, InsideBar, OneBeer);
 
-        Clock.SetUtcNow(DateTimeOffset.Parse("2027-02-16T02:59:59Z"));
+        Clock.SetUtcNow(DateTimeOffset.Parse("2027-02-16T03:01:59Z"));
         await AwardDue();
-        Assert.Equal(0, await TrophyCount(league));          // still the last day
+        Assert.Equal(0, await TrophyCount(league));          // inside the 2 min grace
 
-        Clock.SetUtcNow(DateTimeOffset.Parse("2027-02-16T03:00:01Z"));
+        Clock.SetUtcNow(DateTimeOffset.Parse("2027-02-16T03:02:01Z"));
         await AwardDue();
         await AwardDue();
         Assert.Equal(1, await TrophyCount(league));
@@ -253,7 +253,7 @@ public class StandingsTests(ApiFactory factory) : CheckInTestBase(factory)
         await Join(Me, b, league);
         await ConfirmAt(Me, Bar, InsideBar, OneBeer);
         await ConfirmAt(b, Bar, InsideBar, OneBeer);
-        Clock.SetUtcNow(DateTimeOffset.Parse("2027-02-16T03:00:01Z"));
+        Clock.SetUtcNow(DateTimeOffset.Parse("2027-02-16T03:02:01Z"));
         await AwardDue();
         Assert.Equal(2, await TrophyCount(league));
     }
@@ -262,7 +262,7 @@ public class StandingsTests(ApiFactory factory) : CheckInTestBase(factory)
     public async Task League_without_champion_is_marked_and_gets_no_trophy()
     {
         var league = await CreateLeague(Me, Feb1, Feb15);
-        Clock.SetUtcNow(DateTimeOffset.Parse("2027-02-16T03:00:01Z"));
+        Clock.SetUtcNow(DateTimeOffset.Parse("2027-02-16T03:02:01Z"));
         await AwardDue();
         Assert.Equal(0, await TrophyCount(league));
         await using var db = F.NewDb();
@@ -274,13 +274,84 @@ public class StandingsTests(ApiFactory factory) : CheckInTestBase(factory)
     {
         var league = await CreateLeague(Me, Feb1, Feb15);
         await Confirm(InsideBar, (DrinkType.Beer, 1));
-        Clock.SetUtcNow(DateTimeOffset.Parse("2027-02-16T03:00:01Z"));
-        await Task.WhenAll(Enumerable.Range(0, 4).Select(async _ =>
+        Clock.SetUtcNow(DateTimeOffset.Parse("2027-02-16T03:02:01Z"));
+        // The fixture is shared, so other ended leagues of this class may also be due: compare against what changed.
+        async Task<HashSet<Guid>> Unawarded()
+        {
+            await using var q = F.NewDb();
+            return (await q.Leagues.Where(l => l.TrophiesAwardedAt == null).Select(l => l.Id).ToListAsync()).ToHashSet();
+        }
+        var before = await Unawarded();
+        var counts = await Task.WhenAll(Enumerable.Range(0, 4).Select(async _ =>
         {
             using var scope = F.Services.CreateScope();
-            await AwarderIn(scope).AwardDueAsync(CancellationToken.None);
+            return await AwarderIn(scope).AwardDueAsync(CancellationToken.None);
         }));
+        var newlyMarked = before.Except(await Unawarded()).ToList();
+        Assert.Contains(league, newlyMarked);
+        // Each league is awarded by exactly one of the four calls, and none of them failed (failures are swallowed and logged).
+        Assert.Equal(newlyMarked.Count, counts.Sum());
         Assert.Equal(1, await TrophyCount(league));
+    }
+
+    [Fact]
+    public async Task Leader_who_leaves_the_ended_league_before_the_award_still_gets_the_trophy()
+    {
+        var b = await NewPlayer();
+        var league = await CreateLeague(Me, Feb1, Feb15);
+        await Join(Me, b, league);
+        await ConfirmAt(Me, Bar, InsideBar, (DrinkType.Beer, 3));
+        await ConfirmAt(b, Bar, InsideBar, OneBeer);
+
+        Clock.SetUtcNow(DateTimeOffset.Parse("2027-02-16T03:00:30Z"));   // ended, award has not run yet
+        await F.ReauthenticateAsync(Me);
+        Assert.Equal(HttpStatusCode.NoContent, (await Me.Http.PostAsync($"/leagues/{league}/leave", null)).StatusCode);
+
+        Clock.SetUtcNow(DateTimeOffset.Parse("2027-02-16T03:02:01Z"));
+        await AwardDue();
+        await using var db = F.NewDb();
+        Assert.Equal(Me.UserId, (await db.Trophies.SingleAsync(t => t.LeagueId == league)).UserId);
+    }
+
+    [Fact]
+    public async Task Ended_league_standings_keep_the_champion_after_the_award_and_a_later_leave()
+    {
+        var b = await NewPlayer();
+        var league = await CreateLeague(Me, Feb1, Feb15);
+        await Join(Me, b, league);
+        await ConfirmAt(Me, Bar, InsideBar, (DrinkType.Beer, 3));
+        await ConfirmAt(b, Bar, InsideBar, OneBeer);
+        Clock.SetUtcNow(DateTimeOffset.Parse("2027-02-16T03:02:01Z"));
+        await AwardDue();
+
+        await F.ReauthenticateAsync(Me);
+        Assert.Equal(HttpStatusCode.NoContent, (await Me.Http.PostAsync($"/leagues/{league}/leave", null)).StatusCode);
+
+        var rows = await Standings(b, league);
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(Me.UserId, rows[0].UserId);
+        Assert.Equal(1, rows[0].Rank);
+        Assert.Equal(2, rows[1].Rank);
+        // The caller still has to be a current member.
+        Assert.Equal(HttpStatusCode.NotFound, (await GetStandings(Me, league)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Member_who_left_mid_league_stays_unranked_after_the_league_ends()
+    {
+        var b = await NewPlayer();
+        var league = await CreateLeague(Me, Feb1, Feb15);
+        await Join(Me, b, league);
+        await ConfirmAt(b, Bar, InsideBar, (DrinkType.Beer, 5));
+        await F.ReauthenticateAsync(b);
+        Assert.Equal(HttpStatusCode.NoContent, (await b.Http.PostAsync($"/leagues/{league}/leave", null)).StatusCode);
+        await ConfirmAt(Me, Bar, InsideBar, OneBeer);
+
+        Clock.SetUtcNow(DateTimeOffset.Parse("2027-02-16T03:02:01Z"));
+        await AwardDue();
+        Assert.Equal(Me.UserId, Assert.Single(await Standings(Me, league)).UserId);
+        await using var db = F.NewDb();
+        Assert.Equal(Me.UserId, (await db.Trophies.SingleAsync(t => t.LeagueId == league)).UserId);
     }
 
     [Fact]
@@ -290,9 +361,9 @@ public class StandingsTests(ApiFactory factory) : CheckInTestBase(factory)
         var l2 = await CreateLeague(Me, Feb1, Feb28, "Segunda");
         await Confirm(InsideBar, (DrinkType.Beer, 1));
 
-        Clock.SetUtcNow(DateTimeOffset.Parse("2027-02-16T03:00:01Z"));
+        Clock.SetUtcNow(DateTimeOffset.Parse("2027-02-16T03:02:01Z"));
         await AwardDue();
-        Clock.SetUtcNow(DateTimeOffset.Parse("2027-03-01T03:00:01Z"));
+        Clock.SetUtcNow(DateTimeOffset.Parse("2027-03-01T03:02:01Z"));
         await AwardDue();
 
         await F.ReauthenticateAsync(Me);

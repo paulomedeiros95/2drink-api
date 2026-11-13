@@ -8,19 +8,32 @@ using TwoDrink.Infrastructure.Data.Entities;
 namespace TwoDrink.Api.Jobs;
 
 /// <summary>Awards the Golden Trophy of leagues that have ended. Idempotent and safe across concurrent instances.</summary>
-public class TrophyAwarder(AppDbContext db, StandingsQuery standings, TimeProvider time)
+public class TrophyAwarder(AppDbContext db, StandingsQuery standings, TimeProvider time, ILogger<TrophyAwarder> logger)
 {
+    /// <summary>Wait after the end so a confirm in flight at the last second is already counted.</summary>
+    public static readonly TimeSpan Grace = TimeSpan.FromMinutes(2);
+
     /// <summary>Returns how many leagues were closed out by this call.</summary>
     public async Task<int> AwardDueAsync(CancellationToken ct)
     {
         var now = time.GetUtcNow();
         var candidates = await db.Leagues.AsNoTracking().Where(l => l.TrophiesAwardedAt == null)
             .Select(l => new { l.Id, l.StartDate, l.EndDate }).ToListAsync(ct);
-        var due = candidates.Where(l => BusinessTime.Range(l.StartDate, l.EndDate).EndUtcExclusive <= now).Select(l => l.Id).ToList();
+        var due = candidates.Where(l => BusinessTime.Range(l.StartDate, l.EndDate).EndUtcExclusive + Grace <= now).Select(l => l.Id).ToList();
 
         var awarded = 0;
         foreach (var id in due)
-            if (await AwardLeagueAsync(id, now, ct)) awarded++;
+        {
+            try
+            {
+                if (await AwardLeagueAsync(id, now, ct)) awarded++;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                db.ChangeTracker.Clear();
+                logger.LogError(ex, "Awarding trophies failed for league {LeagueId}", id);
+            }
+        }
         return awarded;
     }
 
