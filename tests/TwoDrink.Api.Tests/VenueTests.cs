@@ -85,6 +85,19 @@ public class VenueTests : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task Nearby_truncates_overlong_name_and_address()
+    {
+        _f.Places.NearbyResult = p => [new PlaceResult("long-1", new string('n', 300), new string('a', 600), new GeoPoint(p.Lat, p.Lng))];
+        var res = await GetNearby(-30.0, -30.0);
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+
+        await using var db = _f.NewDb();
+        var venue = await db.Venues.SingleAsync(v => v.PlaceId == "long-1");
+        Assert.Equal(new string('n', 255), venue.Name);
+        Assert.Equal(new string('a', 500), venue.Address);
+    }
+
+    [Fact]
     public async Task Concurrent_upserts_of_same_place_yield_one_venue()
     {
         _f.Places.NearbyResult = p => [new PlaceResult("race-1", "Bar Race", null, new GeoPoint(p.Lat, p.Lng))];
