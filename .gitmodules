@@ -1,0 +1,3 @@
+[submodule "docs"]
+	path = docs
+	url = https://github.com/paulomedeiros95/2drink-app-docs.git
