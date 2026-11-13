@@ -31,6 +31,9 @@ builder.Services.AddScoped<LedgerVerifier>();
 if (builder.Configuration.GetValue("Ledger:VerificationJobEnabled", true))
     builder.Services.AddHostedService<LedgerVerificationJob>();
 
+if (builder.Configuration.GetValue("CheckIns:CloserJobEnabled", true))
+    builder.Services.AddHostedService<CheckInCloserJob>();
+
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -57,6 +60,7 @@ app.UseRateLimiter();
 app.MapHealthEndpoints();
 app.MapAuthEndpoints();
 app.MapProfileEndpoints();
+app.MapLedgerEndpoints();
 app.MapVenueEndpoints();
 app.MapCheckInIntentEndpoints();
 app.MapCheckInEndpoints();

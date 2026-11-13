@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using TwoDrink.Api.Features.Seasons;
+using TwoDrink.Api.Jobs;
 using TwoDrink.Api.Features.Venues;
 using TwoDrink.Domain.Badges;
 using TwoDrink.Domain.Errors;
@@ -22,6 +23,13 @@ public record BadgeAwarded(string Tier, string? ArtUrl, decimal Points);
 
 public record ConfirmCheckInResponse(Guid CheckInId, decimal PointsAwarded, BadgeAwarded? Badge);
 
+public record ComplementRequest(double Lat, double Lng, double AccuracyM, bool IsMocked, IReadOnlyList<DrinkLineRequest>? Drinks);
+
+public record ComplementResponse(decimal PointsAwarded, int DrinkCount);
+
+/// <summary>The check-in does not exist or belongs to someone else (404 <c>checkin_not_found</c>).</summary>
+public sealed class CheckInNotFoundException() : Exception("Check-in not found.");
+
 /// <summary>The intent does not exist or belongs to someone else (404 <c>intent_not_found</c>).</summary>
 public sealed class CheckInIntentNotFoundException() : Exception("Check-in intent not found.");
 
@@ -34,12 +42,17 @@ public class CheckInService(
     VenueTierService tiers,
     SeasonService seasons,
     IPhotoStorage storage,
+    HydrationReconciler hydration,
+    CheckInCloser closer,
     RulesOptions rules,
     TimeProvider time,
     ILogger<CheckInService> log)
 {
     public const long MaxPhotoBytes = 5 * 1024 * 1024;
     public const string PhotoContentType = "image/jpeg";
+
+    /// <summary>Marks ledger entries written by a complement, so a confirm replay can tell them from its own.</summary>
+    public const string ComplementReason = "complement";
 
     /// <summary>
     /// Turns a validated intent + uploaded selfie into a check-in, its ledger entries and (maybe) a badge — exactly once.
@@ -107,6 +120,43 @@ public class CheckInService(
         return result;
     }
 
+    /// <summary>
+    /// Adds drinks to an open check-in (no new selfie). Same per-user lock as confirm plus a row lock on the check-in,
+    /// so the 15-drink limit and the hydration balance hold under concurrency.
+    /// </summary>
+    public async Task<ComplementResponse> ComplementAsync(Guid userId, Guid checkInId, ComplementRequest req, CancellationToken ct)
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+        var userKey = userId.ToString("D");
+        await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({AdvisoryLocks.CheckIns}, hashtext({userKey}))", ct);
+
+        var checkIn = (await db.CheckIns
+            .FromSql($"SELECT * FROM check_ins WHERE id = {checkInId} FOR UPDATE")
+            .ToListAsync(ct)).SingleOrDefault();
+        if (checkIn is null || checkIn.UserId != userId)
+            throw new CheckInNotFoundException();
+
+        var now = time.GetUtcNow();
+        if (checkIn.ClosedAt is not null || now >= checkIn.ComplementsUntil)
+            throw new RuleViolation("checkin_closed", "This check-in no longer accepts drinks.");
+
+        var venue = await db.Venues.AsNoTracking().SingleAsync(v => v.Id == checkIn.VenueId, ct);
+        geofence.EnsureInside(new DeviceFix(new GeoPoint(req.Lat, req.Lng), req.AccuracyM, req.IsMocked),
+            new GeoPoint(venue.Lat, venue.Lng));
+
+        var lines = ValidateDrinks(req.Drinks, checkIn.DrinkCount);
+
+        var entries = lines.Select(l => new NewEntry(LedgerEntryType.Drink, catalog.PointsFor(l),
+            VenueId: venue.Id, CheckInId: checkIn.Id, DrinkType: l.Type, Quantity: l.Quantity, Reason: ComplementReason)).ToList();
+        checkIn.DrinkCount += lines.Sum(l => l.Quantity);
+        await ledger.AppendAsync(checkIn.LedgerAccountId, entries, ct); // also saves the new DrinkCount
+        var hydrationPoints = await hydration.ReconcileAsync(checkIn, ct, ComplementReason);
+
+        await tx.CommitAsync(ct);
+        return new ComplementResponse(entries.Sum(e => e.Points) + hydrationPoints, checkIn.DrinkCount);
+    }
+
     private async Task<ConfirmCheckInResponse> WriteAsync(Guid userId, CheckInIntent intent, Guid venueId, Guid checkInId,
         string photoBlob, IReadOnlyList<DrinkLine> lines, DateTimeOffset now, CancellationToken ct)
     {
@@ -132,12 +182,19 @@ public class CheckInService(
                 };
         }
 
-        db.CheckIns.Add(new CheckIn
+        // A new check-in ends the complement window of the previous open one (we hold the per-user lock).
+        var previousOpen = await db.CheckIns.AsNoTracking()
+            .Where(c => c.UserId == userId && c.ClosedAt == null).Select(c => c.Id).ToListAsync(ct);
+        foreach (var id in previousOpen)
+            await closer.CloseAsync(id, ct);
+
+        var checkIn = new CheckIn
         {
             Id = checkInId, UserId = userId, LedgerAccountId = ledgerAccountId, VenueId = venueId, SeasonId = season?.Id,
             PhotoBlobName = photoBlob, CreatedAt = now, ComplementsUntil = now + rules.ComplementWindow,
             DrinkCount = lines.Sum(l => l.Quantity),
-        });
+        };
+        db.CheckIns.Add(checkIn);
         intent.ConfirmedCheckInId = checkInId;
         if (badge is not null) db.UserBadges.Add(badge);
 
@@ -150,15 +207,19 @@ public class CheckInService(
 
         // Saves the check-in, intent and badge together with the entries (same transaction).
         await ledger.AppendAsync(ledgerAccountId, entries, ct);
+        var hydrationPoints = await hydration.ReconcileAsync(checkIn, ct);
 
-        return new ConfirmCheckInResponse(checkInId, entries.Sum(e => e.Points),
+        return new ConfirmCheckInResponse(checkInId, entries.Sum(e => e.Points) + hydrationPoints,
             badge is null ? null : new BadgeAwarded(badge.Tier.ToString(), badge.ArtUrl, TierPoints.Of(badge.Tier)));
     }
 
     /// <summary>The result of an already-confirmed intent, rebuilt from the ledger and the badge row.</summary>
     private async Task<ConfirmCheckInResponse> StoredResultAsync(Guid checkInId, CancellationToken ct)
     {
-        var points = await db.LedgerEntries.Where(e => e.CheckInId == checkInId).SumAsync(e => e.Points, ct);
+        // Only what the confirm itself wrote: complements (and the hydration swings they cause) are not part of it.
+        var points = await db.LedgerEntries
+            .Where(e => e.CheckInId == checkInId && e.Type != LedgerEntryType.Reversal && e.Reason != ComplementReason)
+            .SumAsync(e => e.Points, ct);
         var badge = await db.UserBadges.AsNoTracking().SingleOrDefaultAsync(b => b.CheckInId == checkInId, ct);
         decimal badgePoints = 0;
         if (badge is not null)
@@ -170,7 +231,7 @@ public class CheckInService(
     }
 
     /// <summary>Parses and merges the lines (same type summed); 1..MaxDrinksPerCheckIn in total, each quantity ≥ 1.</summary>
-    private IReadOnlyList<DrinkLine> ValidateDrinks(IReadOnlyList<DrinkLineRequest>? drinks)
+    private IReadOnlyList<DrinkLine> ValidateDrinks(IReadOnlyList<DrinkLineRequest>? drinks, int alreadyHad = 0)
     {
         if (drinks is null || drinks.Count == 0)
             throw new RuleViolation("drinks_required", "At least one drink is required.");
@@ -186,7 +247,7 @@ public class CheckInService(
             total += d.Quantity;
             merged[type] = merged.GetValueOrDefault(type) + d.Quantity;
         }
-        if (total > rules.MaxDrinksPerCheckIn)
+        if (alreadyHad + total > rules.MaxDrinksPerCheckIn)
             throw new RuleViolation("drink_limit", $"At most {rules.MaxDrinksPerCheckIn} drinks per check-in.");
 
         return merged.Select(kv => new DrinkLine(kv.Key, kv.Value)).ToList();

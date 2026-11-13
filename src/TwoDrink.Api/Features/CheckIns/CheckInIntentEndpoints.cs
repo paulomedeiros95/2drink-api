@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using TwoDrink.Api.Features.Auth;
 using TwoDrink.Api.Features.Venues;
+using TwoDrink.Api.Jobs;
 using TwoDrink.Domain.Presence;
 using TwoDrink.Domain.Scoring;
 using TwoDrink.Infrastructure.Data;
@@ -23,6 +24,8 @@ public static class CheckInIntentEndpoints
         services.AddScoped<Geofence>();
         services.AddScoped<CheckInCooldown>();
         services.AddSingleton<DrinkCatalog>();
+        services.AddScoped<HydrationReconciler>();
+        services.AddScoped<CheckInCloser>();
         services.AddScoped<CheckInService>();
         services.AddSingleton<BlobPhotoStorage>();
         services.AddSingleton<IPhotoStorage>(sp => sp.GetRequiredService<BlobPhotoStorage>());

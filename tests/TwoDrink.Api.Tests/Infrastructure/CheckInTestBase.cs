@@ -131,6 +131,12 @@ public abstract class CheckInTestBase : IClassFixture<ApiFactory>, IAsyncLifetim
     protected static async Task<string?> Code(HttpResponseMessage res) =>
         (await res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString();
 
+    protected static async Task AssertProblem(HttpResponseMessage res, int status, string code)
+    {
+        Assert.Equal(status, (int)res.StatusCode);
+        Assert.Equal(code, await Code(res));
+    }
+
     // ---- sponsorships / seasons (owner connection) ----
 
     protected async Task Sponsor(Guid venueId, Tier tier, DateTimeOffset? start = null, DateTimeOffset? end = null, string? artUrl = null)

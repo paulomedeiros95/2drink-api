@@ -55,3 +55,12 @@ Docker must be able to pull `postgres:17` and `testcontainers/ryuk` from Docker 
 - Check-in tests derive from `CheckInTestBase` (fresh player `Me` and venue `Bar` per test; `Confirm`, `Sponsor`, `EndSponsorship`,
   `SeedSeason`, `LedgerTotal`, `CheckInCount`). `ApiFactory.PhotoStorage.FailCopy` injects a storage outage;
   `ApiFactory.ReauthenticateAsync` renews the 1h token after clock jumps.
+
+## Complements, closing and hydration
+
+- `POST /checkins/{id}/drinks` (Player policy, `CheckInService.ComplementAsync`) takes the same per-user lock as confirm plus `FOR UPDATE` on the
+  check-in; 404 `checkin_not_found` (unknown or someone else's), 422 `checkin_closed` (closed or past `ComplementsUntil`), `drink_limit` counts the total.
+  Complement ledger entries carry `Reason = "complement"`, which is how a confirm replay returns only its own original points.
+- `HydrationReconciler` runs inside the confirm and complement transactions (+bonus when met, `Reversal` with `hydration_goal_lost` when lost).
+- `CheckInCloser` (`CloseAsync` idempotent, `SweepAsync`) only sets `ClosedAt`; `CheckInCloserJob` sweeps every 5 min (`CheckIns:CloserJobEnabled=false` in tests).
+- `GET /me/ledger?before=&limit=` (Player policy): own statement, newest first, `before` = Sequence cursor, limit 1..200 (422 `invalid_paging`).

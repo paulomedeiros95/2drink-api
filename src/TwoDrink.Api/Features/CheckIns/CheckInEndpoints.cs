@@ -28,6 +28,21 @@ public static class CheckInEndpoints
             }
         }).RequireAuthorization(AuthSetup.PlayerPolicy);
 
+        app.MapPost("/checkins/{checkInId:guid}/drinks", async (Guid checkInId, ComplementRequest req,
+            ClaimsPrincipal principal, CheckInService checkIns, CancellationToken ct) =>
+        {
+            var userId = Guid.Parse(principal.FindFirstValue(AuthSetup.SubjectClaim)!);
+            try
+            {
+                return Results.Ok(await checkIns.ComplementAsync(userId, checkInId, req, ct));
+            }
+            catch (CheckInNotFoundException)
+            {
+                return Results.Problem(statusCode: StatusCodes.Status404NotFound, title: "Check-in not found",
+                    extensions: new Dictionary<string, object?> { ["code"] = "checkin_not_found" });
+            }
+        }).RequireAuthorization(AuthSetup.PlayerPolicy);
+
         return app;
     }
 
