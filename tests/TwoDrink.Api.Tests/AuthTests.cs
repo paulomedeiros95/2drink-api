@@ -120,6 +120,7 @@ public class AuthTests(ApiFactory factory) : IClassFixture<ApiFactory>
     [InlineData("name_long", "display_name_invalid")]
     [InlineData("terms_blank", "terms_required")]
     [InlineData("terms_null", "terms_required")]
+    [InlineData("terms_long", "terms_required")]
     [InlineData("locale_bad", "locale_invalid")]
     public async Task Invalid_profile_is_422_with_code(string scenario, string code)
     {
@@ -135,6 +136,7 @@ public class AuthTests(ApiFactory factory) : IClassFixture<ApiFactory>
             "name_long" => await PutProfile(http, adult, name: new string('x', 41)),
             "terms_blank" => await PutProfile(http, adult, terms: " "),
             "terms_null" => await PutProfile(http, adult, terms: null),
+            "terms_long" => await PutProfile(http, adult, terms: new string('v', 33)),
             _ => await PutProfile(http, adult, locale: "fr"),
         };
         await AssertProblem(res, 422, code);
