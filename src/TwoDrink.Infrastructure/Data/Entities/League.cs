@@ -12,4 +12,6 @@ public class League
     public DateOnly StartDate { get; set; }
     public DateOnly EndDate { get; set; }
     public DateTimeOffset? TrophiesAwardedAt { get; set; }
+    /// <summary>The league created by renewing this one (a league is renewed at most once).</summary>
+    public Guid? RenewedAsLeagueId { get; set; }
 }

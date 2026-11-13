@@ -168,6 +168,10 @@ namespace TwoDrink.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(60)")
                         .HasColumnName("name");
 
+                    b.Property<Guid?>("RenewedAsLeagueId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("renewed_as_league_id");
+
                     b.Property<Guid>("SeasonId")
                         .HasColumnType("uuid")
                         .HasColumnName("season_id");
@@ -185,6 +189,9 @@ namespace TwoDrink.Infrastructure.Data.Migrations
 
                     b.HasIndex("CreatorId")
                         .HasDatabaseName("ix_leagues_creator_id");
+
+                    b.HasIndex("RenewedAsLeagueId")
+                        .HasDatabaseName("ix_leagues_renewed_as_league_id");
 
                     b.HasIndex("SeasonId")
                         .HasDatabaseName("ix_leagues_season_id");
@@ -765,6 +772,12 @@ namespace TwoDrink.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_leagues_users_creator_id");
+
+                    b.HasOne("TwoDrink.Infrastructure.Data.Entities.League", null)
+                        .WithMany()
+                        .HasForeignKey("RenewedAsLeagueId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_leagues_leagues_renewed_as_league_id");
 
                     b.HasOne("TwoDrink.Infrastructure.Data.Entities.Season", null)
                         .WithMany()

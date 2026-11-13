@@ -201,4 +201,71 @@ public class LeagueRenewTests(ApiFactory factory) : IClassFixture<ApiFactory>, I
         await AssertCode(HttpStatusCode.UnprocessableEntity, "league_dates_invalid", await Renew(A, old, start: new DateOnly(2027, 2, 1), end: new DateOnly(2027, 2, 5)));
         await AssertCode(HttpStatusCode.UnprocessableEntity, "dates_outside_season", await Renew(A, old, start: new DateOnly(2027, 6, 20), end: new DateOnly(2027, 7, 10)));
     }
+
+    [Fact]
+    public async Task Creator_who_left_the_ended_league_is_still_in_the_renewal()
+    {
+        var b = await NewPlayer();
+        var old = await CreateLeague(A, new DateOnly(2027, 2, 1), new DateOnly(2027, 2, 10));
+        await Join(A, b, old);
+        await GoToFeb11(A, b);
+        Assert.Equal(HttpStatusCode.NoContent, (await A.Http.PostAsync($"/leagues/{old}/leave", null)).StatusCode);
+
+        var res = await Renew(A, old);
+        Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        var newId = (await res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+        var mine = (await MyLeagues(A)).Single(l => l.GetProperty("id").GetGuid() == newId);
+        Assert.Equal(2, mine.GetProperty("memberCount").GetInt32());
+        Assert.Contains(await MyLeagues(b), l => l.GetProperty("id").GetGuid() == newId);
+    }
+
+    [Fact]
+    public async Task Creator_who_left_and_has_no_slot_gets_league_limit()
+    {
+        var old = await CreateLeague(A, new DateOnly(2027, 2, 1), new DateOnly(2027, 2, 10));
+        await GoToFeb11(A);
+        Assert.Equal(HttpStatusCode.NoContent, (await A.Http.PostAsync($"/leagues/{old}/leave", null)).StatusCode);
+        await CreateLeague(A, new DateOnly(2027, 2, 11), new DateOnly(2027, 2, 20));
+        await CreateLeague(A, new DateOnly(2027, 2, 11), new DateOnly(2027, 2, 20));
+
+        await AssertCode(HttpStatusCode.UnprocessableEntity, "league_limit", await Renew(A, old));
+        await using var db = factory.NewDb();
+        Assert.Equal(3, await db.Leagues.CountAsync(l => l.CreatorId == A.UserId));
+    }
+
+    [Fact]
+    public async Task Concurrent_renews_create_one_league()
+    {
+        var b = await NewPlayer();
+        var old = await CreateLeague(A, new DateOnly(2027, 2, 1), new DateOnly(2027, 2, 10));
+        await Join(A, b, old);
+        await GoToFeb11(A, b);
+
+        var responses = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => Renew(A, old)));
+        var ids = new List<Guid>();
+        foreach (var r in responses)
+        {
+            Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+            var body = await r.Content.ReadFromJsonAsync<JsonElement>();
+            ids.Add(body.GetProperty("id").GetGuid());
+        }
+        Assert.Single(ids.Distinct());
+
+        await using var db = factory.NewDb();
+        Assert.Equal(2, await db.Leagues.CountAsync(l => l.CreatorId == A.UserId)); // old + one renewal
+        Assert.Equal(ids[0], (await db.Leagues.AsNoTracking().SingleAsync(l => l.Id == old)).RenewedAsLeagueId);
+
+        // A later renew returns the same league, with no skipped users.
+        var again = await (await Renew(A, old)).Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(ids[0], again.GetProperty("id").GetGuid());
+        Assert.Empty(Ids(again.GetProperty("skippedUserIds")));
+    }
+
+    [Fact]
+    public async Task Invites_for_an_ended_league_are_rejected()
+    {
+        var old = await CreateLeague(A, new DateOnly(2027, 2, 1), new DateOnly(2027, 2, 10));
+        await GoToFeb11(A);
+        await AssertCode(HttpStatusCode.UnprocessableEntity, "league_ended", await A.Http.PostAsync($"/leagues/{old}/invites", null));
+    }
 }

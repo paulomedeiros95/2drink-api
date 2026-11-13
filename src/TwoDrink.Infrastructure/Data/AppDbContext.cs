@@ -130,6 +130,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.CoverBlobName).HasMaxLength(200);
             e.HasIndex(x => x.CreatorId);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.CreatorId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<League>().WithMany().HasForeignKey(x => x.RenewedAsLeagueId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<Season>().WithMany().HasForeignKey(x => x.SeasonId).OnDelete(DeleteBehavior.Restrict);
         });
 

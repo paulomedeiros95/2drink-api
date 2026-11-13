@@ -67,10 +67,16 @@ public class LeagueService(AppDbContext db, RulesOptions rules, TimeProvider tim
     /// Creates a new league from an ended one, carrying over its active members (creator included). The creator needs a
     /// free slot (else <c>league_limit</c>, nothing created); other members without one are skipped and listed.
     /// Slot locks for every carried-over user are taken in ascending id order to avoid deadlocks with concurrent creates/accepts.
+    /// The creator is always carried over, even after leaving the ended league.
+    /// A league is renewed at most once: the old row is locked <c>FOR UPDATE</c> and a repeated renew returns the
+    /// existing renewal (with no skipped users) instead of creating another league.
     /// </summary>
     public async Task<RenewLeagueResponse> RenewAsync(Guid userId, Guid leagueId, RenewLeagueRequest req, CancellationToken ct)
     {
-        var old = await db.Leagues.AsNoTracking().SingleOrDefaultAsync(l => l.Id == leagueId, ct)
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var old = (await db.Leagues
+                      .FromSql($"SELECT * FROM leagues WHERE id = {leagueId} FOR UPDATE")
+                      .ToListAsync(ct)).SingleOrDefault()
                   ?? throw new LeagueNotFoundException();
         if (old.CreatorId != userId)
             throw new NotLeagueCreatorException();
@@ -80,12 +86,19 @@ public class LeagueService(AppDbContext db, RulesOptions rules, TimeProvider tim
         if (today <= old.EndDate)
             throw new RuleViolation("league_not_ended", "Only an ended league can be renewed.");
 
+        if (old.RenewedAsLeagueId is { } renewedId)
+        {
+            var existing = await db.Leagues.AsNoTracking().SingleAsync(l => l.Id == renewedId, ct);
+            var e = Summarize(existing, today);
+            return new RenewLeagueResponse(e.Id, e.Name, e.Description, e.StartDate, e.EndDate, e.Status, []);
+        }
+
         var (name, description, season) = await ValidateNewLeagueAsync(req.Name ?? old.Name, old.Description, req.StartDate, req.EndDate, today, ct);
 
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
         var memberIds = await db.LeagueMemberships.AsNoTracking()
             .Where(m => m.LeagueId == leagueId && m.LeftAt == null)
-            .Select(m => m.UserId).OrderBy(id => id).ToListAsync(ct);
+            .Select(m => m.UserId).ToListAsync(ct);
+        memberIds = memberIds.Append(userId).Distinct().OrderBy(id => id).ToList();
         await LockSlotsAsync(memberIds, ct);
 
         var carried = new List<Guid>();
@@ -104,6 +117,7 @@ public class LeagueService(AppDbContext db, RulesOptions rules, TimeProvider tim
         };
         db.Leagues.Add(league);
         db.LeagueMemberships.AddRange(carried.Select(id => new LeagueMembership { LeagueId = league.Id, UserId = id, JoinedAt = now }));
+        old.RenewedAsLeagueId = league.Id;
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
         var s = Summarize(league, today);
@@ -139,6 +153,8 @@ public class LeagueService(AppDbContext db, RulesOptions rules, TimeProvider tim
             throw new NotLeagueCreatorException();
 
         var now = time.GetUtcNow();
+        if (BusinessTime.Today(now) > league.EndDate)
+            throw new RuleViolation("league_ended", "The league has ended.");
         var token = Base64Url(RandomNumberGenerator.GetBytes(32));
         var invite = new LeagueInvite
         {
