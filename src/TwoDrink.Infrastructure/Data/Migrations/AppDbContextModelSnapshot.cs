@@ -358,6 +358,9 @@ namespace TwoDrink.Infrastructure.Data.Migrations
                     b.HasKey("Id")
                         .HasName("pk_ledger_entries");
 
+                    b.HasIndex("AccountId", "CreatedAt")
+                        .HasDatabaseName("ix_ledger_entries_account_id_created_at");
+
                     b.HasIndex("AccountId", "Sequence")
                         .IsUnique()
                         .HasDatabaseName("ix_ledger_entries_account_id_sequence");
@@ -451,6 +454,38 @@ namespace TwoDrink.Infrastructure.Data.Migrations
                             Name = "2027 – 1º semestre",
                             StartDate = new DateOnly(2027, 1, 1)
                         });
+                });
+
+            modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.Trophy", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("AwardedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("awarded_at");
+
+                    b.Property<Guid>("LeagueId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("league_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_trophies");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_trophies_user_id");
+
+                    b.HasIndex("LeagueId", "UserId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_trophies_league_id_user_id");
+
+                    b.ToTable("trophies", (string)null);
                 });
 
             modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.User", b =>
@@ -782,6 +817,23 @@ namespace TwoDrink.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_refresh_tokens_users_user_id");
+                });
+
+            modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.Trophy", b =>
+                {
+                    b.HasOne("TwoDrink.Infrastructure.Data.Entities.League", null)
+                        .WithMany()
+                        .HasForeignKey("LeagueId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_trophies_leagues_league_id");
+
+                    b.HasOne("TwoDrink.Infrastructure.Data.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_trophies_users_user_id");
                 });
 
             modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.User", b =>

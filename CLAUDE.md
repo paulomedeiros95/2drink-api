@@ -70,3 +70,8 @@ Docker must be able to pull `postgres:17` and `testcontainers/ryuk` from Docker 
 - `POST /leagues`, `POST /leagues/{id}/invites` (creator only, 403 otherwise), `POST /invites/{token}/accept`, `POST /leagues/{id}/leave`, `GET /me/leagues` (all Player policy, `LeagueService`).
 - A membership occupies a slot while `LeftAt == null` and today (Sao Paulo) <= league end date; limit `Rules:MaxActiveLeaguesPerUser`. Create and accept run in one transaction under `pg_advisory_xact_lock(2, hashtext(userId))`; a failed accept check rolls the invite claim back.
 - Invite tokens: 32 random bytes base64url; only the SHA-256 hex hash is stored. Link base from `Invites:BaseUrl`.
+
+## Standings and trophies
+
+- `GET /leagues/{id}/standings` (Player policy, `StandingsQuery`): one SQL query over the ledger; window per member is `[max(JoinedAt, start), end+1 00:00 SP)`, points = sum of all entry types, distinct venues from `CheckIn` entries; only `LeftAt == null` members. Competition ranking (1,1,3); unknown league or non-member -> 404 `not_member`.
+- `TrophyAwarder.AwardDueAsync` (+ `TrophyAwarderJob` every 5 min, `Trophies:AwarderJobEnabled=false` in tests): per ended league, own transaction, `FOR UPDATE` on the league row, re-checks `TrophiesAwardedAt`; no champion still marks the league. `GET /me/trophies` lists a player's trophies newest first.

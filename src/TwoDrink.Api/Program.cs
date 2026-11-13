@@ -35,6 +35,8 @@ if (builder.Configuration.GetValue("Ledger:VerificationJobEnabled", true))
 
 if (builder.Configuration.GetValue("CheckIns:CloserJobEnabled", true))
     builder.Services.AddHostedService<CheckInCloserJob>();
+if (builder.Configuration.GetValue("Trophies:AwarderJobEnabled", true))
+    builder.Services.AddHostedService<TrophyAwarderJob>();
 
 builder.Services.AddRateLimiter(options =>
 {

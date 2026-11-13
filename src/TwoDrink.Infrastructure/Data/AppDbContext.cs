@@ -22,6 +22,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<League> Leagues => Set<League>();
     public DbSet<LeagueMembership> LeagueMemberships => Set<LeagueMembership>();
     public DbSet<LeagueInvite> LeagueInvites => Set<LeagueInvite>();
+    public DbSet<Trophy> Trophies => Set<Trophy>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -61,6 +62,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.PrevHash).HasMaxLength(64);
             e.Property(x => x.Hash).HasMaxLength(64);
             e.HasIndex(x => new { x.AccountId, x.Sequence }).IsUnique();
+            e.HasIndex(x => new { x.AccountId, x.CreatedAt });
             e.HasOne<LedgerAccount>().WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Restrict);
         });
 
@@ -145,6 +147,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => x.LeagueId);
             e.HasOne<League>().WithMany().HasForeignKey(x => x.LeagueId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<User>().WithMany().HasForeignKey(x => x.UsedBy).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<Trophy>(e =>
+        {
+            e.ToTable("trophies");
+            e.HasIndex(x => new { x.LeagueId, x.UserId }).IsUnique();
+            e.HasIndex(x => x.UserId);
+            e.HasOne<League>().WithMany().HasForeignKey(x => x.LeagueId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
         });
 
         var season2026H2 = new Season { Id = new Guid("5ea50000-2026-4000-8000-000000000002"), Name = "2026 – 2º semestre", StartDate = new DateOnly(2026, 7, 1), EndDate = new DateOnly(2026, 12, 31) };
