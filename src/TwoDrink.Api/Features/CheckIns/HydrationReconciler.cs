@@ -17,17 +17,21 @@ public class HydrationReconciler(AppDbContext db, LedgerWriter ledger, RulesOpti
 
     /// <summary>Reconciles <paramref name="c"/>; returns the points added (+bonus, -bonus or 0).</summary>
     /// <param name="reason">Stored on a new bonus entry (reversals always use <see cref="GoalLostReason"/>).</param>
-    public async Task<decimal> ReconcileAsync(CheckIn c, CancellationToken ct, string? reason = null)
+    /// <param name="at">Business time for new entries (the caller's validated <c>now</c>).</param>
+    public async Task<decimal> ReconcileAsync(CheckIn c, CancellationToken ct, string? reason = null, DateTimeOffset? at = null)
     {
+        // Every lookup is scoped to the check-in's account so it stays on the account/check-in indexes.
         var entries = await db.LedgerEntries.AsNoTracking()
-            .Where(e => e.CheckInId == c.Id && (e.Type == LedgerEntryType.Drink || e.Type == LedgerEntryType.HydrationBonus))
+            .Where(e => e.AccountId == c.LedgerAccountId && e.CheckInId == c.Id
+                        && (e.Type == LedgerEntryType.Drink || e.Type == LedgerEntryType.HydrationBonus))
             .OrderBy(e => e.Sequence)
             .ToListAsync(ct);
 
         // Anything reversed (by the hydration rule or by an admin correction) no longer counts.
         var ids = entries.Select(e => e.Id).ToList();
         var reversed = (await db.LedgerEntries.AsNoTracking()
-            .Where(e => e.Type == LedgerEntryType.Reversal && e.ReversesEntryId != null && ids.Contains(e.ReversesEntryId.Value))
+            .Where(e => e.AccountId == c.LedgerAccountId && e.Type == LedgerEntryType.Reversal
+                        && e.ReversesEntryId != null && ids.Contains(e.ReversesEntryId.Value))
             .Select(e => e.ReversesEntryId!.Value)
             .ToListAsync(ct)).ToHashSet();
 
@@ -43,14 +47,14 @@ public class HydrationReconciler(AppDbContext db, LedgerWriter ledger, RulesOpti
         {
             delta = rules.HydrationBonus;
             await ledger.AppendAsync(c.LedgerAccountId,
-                [new NewEntry(LedgerEntryType.HydrationBonus, delta, VenueId: c.VenueId, CheckInId: c.Id, Reason: reason)], ct);
+                [new NewEntry(LedgerEntryType.HydrationBonus, delta, VenueId: c.VenueId, CheckInId: c.Id, Reason: reason)], ct, at);
         }
         else if (!met && liveBonus is not null)
         {
             delta = -liveBonus.Points;
             await ledger.AppendAsync(c.LedgerAccountId,
                 [new NewEntry(LedgerEntryType.Reversal, delta, VenueId: c.VenueId, CheckInId: c.Id,
-                    ReversesEntryId: liveBonus.Id, Reason: GoalLostReason)], ct);
+                    ReversesEntryId: liveBonus.Id, Reason: GoalLostReason)], ct, at);
         }
 
         if (c.HydrationMet != met)

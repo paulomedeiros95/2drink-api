@@ -20,8 +20,12 @@ public record NewEntry(
 public class LedgerWriter(AppDbContext db, TimeProvider clock)
 {
     /// <summary>Appends entries to the account chain. Must run inside the caller's transaction.</summary>
+    /// <param name="at">
+    /// Business time of the entries (the <c>now</c> the caller validated its rules with), so an entry never lands after the
+    /// window it was validated for. Defaults to the clock at append time. Truncated to microseconds like every timestamp.
+    /// </param>
     public async Task<IReadOnlyList<LedgerEntry>> AppendAsync(
-        Guid accountId, IReadOnlyList<NewEntry> entries, CancellationToken ct)
+        Guid accountId, IReadOnlyList<NewEntry> entries, CancellationToken ct, DateTimeOffset? at = null)
     {
         if (db.Database.CurrentTransaction is null)
             throw new InvalidOperationException("LedgerWriter.AppendAsync must be called inside a transaction.");
@@ -38,7 +42,7 @@ public class LedgerWriter(AppDbContext db, TimeProvider clock)
 
         var sequence = last?.Sequence ?? 0;
         var prevHash = last?.Hash ?? LedgerHasher.Genesis;
-        var now = LedgerHasher.TruncateToMicroseconds(clock.GetUtcNow());
+        var now = LedgerHasher.TruncateToMicroseconds(at ?? clock.GetUtcNow());
         var result = new List<LedgerEntry>(entries.Count);
 
         foreach (var n in entries)

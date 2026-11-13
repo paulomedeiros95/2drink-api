@@ -75,7 +75,7 @@ public class CheckInService(
 
         // 2. already confirmed: same answer (even after the intent expired, so a late network retry is safe)
         if (intent.ConfirmedCheckInId is { } confirmedId)
-            return await StoredResultAsync(confirmedId, ct);
+            return await StoredResultAsync(userId, confirmedId, ct);
 
         var now = time.GetUtcNow();
         if (now >= intent.ExpiresAt)
@@ -150,8 +150,8 @@ public class CheckInService(
         var entries = lines.Select(l => new NewEntry(LedgerEntryType.Drink, catalog.PointsFor(l),
             VenueId: venue.Id, CheckInId: checkIn.Id, DrinkType: l.Type, Quantity: l.Quantity, Reason: ComplementReason)).ToList();
         checkIn.DrinkCount += lines.Sum(l => l.Quantity);
-        await ledger.AppendAsync(checkIn.LedgerAccountId, entries, ct); // also saves the new DrinkCount
-        var hydrationPoints = await hydration.ReconcileAsync(checkIn, ct, ComplementReason);
+        await ledger.AppendAsync(checkIn.LedgerAccountId, entries, ct, now); // also saves the new DrinkCount
+        var hydrationPoints = await hydration.ReconcileAsync(checkIn, ct, ComplementReason, now);
 
         await tx.CommitAsync(ct);
         return new ComplementResponse(entries.Sum(e => e.Points) + hydrationPoints, checkIn.DrinkCount);
@@ -206,25 +206,28 @@ public class CheckInService(
                 VenueId: venueId, CheckInId: checkInId, Tier: badge.Tier));
 
         // Saves the check-in, intent and badge together with the entries (same transaction).
-        await ledger.AppendAsync(ledgerAccountId, entries, ct);
-        var hydrationPoints = await hydration.ReconcileAsync(checkIn, ct);
+        await ledger.AppendAsync(ledgerAccountId, entries, ct, now);
+        var hydrationPoints = await hydration.ReconcileAsync(checkIn, ct, at: now);
 
         return new ConfirmCheckInResponse(checkInId, entries.Sum(e => e.Points) + hydrationPoints,
             badge is null ? null : new BadgeAwarded(badge.Tier.ToString(), badge.ArtUrl, TierPoints.Of(badge.Tier)));
     }
 
     /// <summary>The result of an already-confirmed intent, rebuilt from the ledger and the badge row.</summary>
-    private async Task<ConfirmCheckInResponse> StoredResultAsync(Guid checkInId, CancellationToken ct)
+    private async Task<ConfirmCheckInResponse> StoredResultAsync(Guid userId, Guid checkInId, CancellationToken ct)
     {
+        // Scoped to the account so the lookups stay on the ledger indexes.
+        var accountId = await db.Users.Where(u => u.Id == userId).Select(u => u.LedgerAccountId).SingleAsync(ct);
+        var mine = db.LedgerEntries.Where(e => e.AccountId == accountId && e.CheckInId == checkInId);
         // Only what the confirm itself wrote: complements (and the hydration swings they cause) are not part of it.
-        var points = await db.LedgerEntries
-            .Where(e => e.CheckInId == checkInId && e.Type != LedgerEntryType.Reversal && e.Reason != ComplementReason)
+        var points = await mine
+            .Where(e => e.Type != LedgerEntryType.Reversal && e.Reason != ComplementReason)
             .SumAsync(e => e.Points, ct);
         var badge = await db.UserBadges.AsNoTracking().SingleOrDefaultAsync(b => b.CheckInId == checkInId, ct);
         decimal badgePoints = 0;
         if (badge is not null)
-            badgePoints = await db.LedgerEntries
-                .Where(e => e.CheckInId == checkInId && e.Type == LedgerEntryType.Badge)
+            badgePoints = await mine
+                .Where(e => e.Type == LedgerEntryType.Badge)
                 .Select(e => e.Points).FirstOrDefaultAsync(ct);
         return new ConfirmCheckInResponse(checkInId, points,
             badge is null ? null : new BadgeAwarded(badge.Tier.ToString(), badge.ArtUrl, badgePoints));

@@ -358,6 +358,14 @@ namespace TwoDrink.Infrastructure.Data.Migrations
                     b.HasKey("Id")
                         .HasName("pk_ledger_entries");
 
+                    b.HasIndex("CheckInId")
+                        .HasDatabaseName("ix_ledger_entries_check_in_id")
+                        .HasFilter("check_in_id IS NOT NULL");
+
+                    b.HasIndex("ReversesEntryId")
+                        .HasDatabaseName("ix_ledger_entries_reverses_entry_id")
+                        .HasFilter("reverses_entry_id IS NOT NULL");
+
                     b.HasIndex("AccountId", "CreatedAt")
                         .HasDatabaseName("ix_ledger_entries_account_id_created_at");
 

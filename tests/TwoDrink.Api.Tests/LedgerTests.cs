@@ -128,8 +128,14 @@ public class LedgerTests(ApiFactory factory) : IClassFixture<ApiFactory>
         // Superuser disables the trigger, alters points and re-enables it: only the hash chain can reveal it.
         await using var owner = factory.NewOwnerDb();
         await owner.Database.ExecuteSqlRawAsync("ALTER TABLE ledger_entries DISABLE TRIGGER USER");
-        await owner.Database.ExecuteSqlAsync($"UPDATE ledger_entries SET points = 99 WHERE id = {badEntries[0].Id}");
-        await owner.Database.ExecuteSqlRawAsync("ALTER TABLE ledger_entries ENABLE TRIGGER USER");
+        try
+        {
+            await owner.Database.ExecuteSqlAsync($"UPDATE ledger_entries SET points = 99 WHERE id = {badEntries[0].Id}");
+        }
+        finally
+        {
+            await owner.Database.ExecuteSqlRawAsync("ALTER TABLE ledger_entries ENABLE TRIGGER USER");
+        }
 
         var broken = await new LedgerVerifier(db).FindBrokenChainsAsync(default);
         Assert.Contains(bad, broken);
@@ -145,8 +151,14 @@ public class LedgerTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
         await using var owner = factory.NewOwnerDb();
         await owner.Database.ExecuteSqlRawAsync("ALTER TABLE ledger_entries DISABLE TRIGGER USER");
-        await owner.Database.ExecuteSqlAsync($"DELETE FROM ledger_entries WHERE id = {e[0].Id}");
-        await owner.Database.ExecuteSqlRawAsync("ALTER TABLE ledger_entries ENABLE TRIGGER USER");
+        try
+        {
+            await owner.Database.ExecuteSqlAsync($"DELETE FROM ledger_entries WHERE id = {e[0].Id}");
+        }
+        finally
+        {
+            await owner.Database.ExecuteSqlRawAsync("ALTER TABLE ledger_entries ENABLE TRIGGER USER");
+        }
 
         Assert.Contains(acc, await new LedgerVerifier(db).FindBrokenChainsAsync(default));
     }
@@ -160,5 +172,35 @@ public class LedgerTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var seqs = await db.LedgerEntries.Where(x => x.AccountId == acc).Select(x => x.Sequence).OrderBy(x => x).ToListAsync();
         Assert.Equal(Enumerable.Range(1, 10).Select(i => (long)i), seqs);
         Assert.DoesNotContain(acc, await new LedgerVerifier(db).FindBrokenChainsAsync(default)); // shared DB: other tests tamper on purpose
+    }
+
+    [Fact]
+    public async Task Append_stamps_the_business_time_given_by_the_caller()
+    {
+        await using var db = factory.NewDb();
+        var acc = await NewAccount(db);
+        factory.Clock.SetUtcNow(TestClock.DefaultStart);
+        var at = TestClock.DefaultStart.AddMinutes(-5).AddTicks(1234567);
+
+        await using var tx = await db.Database.BeginTransactionAsync();
+        var written = (await new LedgerWriter(db, factory.Clock).AppendAsync(acc, [Drink(DrinkType.Beer, 1)], default, at))[0];
+        await tx.CommitAsync();
+
+        Assert.Equal(LedgerHasher.TruncateToMicroseconds(at), written.CreatedAt);
+        await using var fresh = factory.NewDb();
+        var read = await fresh.LedgerEntries.AsNoTracking().SingleAsync(x => x.Id == written.Id);
+        Assert.Equal(written.CreatedAt, read.CreatedAt);
+        Assert.Equal(written.Hash, LedgerHasher.Compute(read));
+    }
+
+    [Fact]
+    public async Task Ledger_has_partial_indexes_for_check_in_and_reversal_lookups()
+    {
+        await using var owner = factory.NewOwnerDb();
+        var defs = await owner.Database
+            .SqlQueryRaw<string>("SELECT indexdef AS \"Value\" FROM pg_indexes WHERE tablename = 'ledger_entries'")
+            .ToListAsync();
+        Assert.Contains(defs, d => d.Contains("(check_in_id)") && d.Contains("WHERE (check_in_id IS NOT NULL)"));
+        Assert.Contains(defs, d => d.Contains("(reverses_entry_id)") && d.Contains("WHERE (reverses_entry_id IS NOT NULL)"));
     }
 }

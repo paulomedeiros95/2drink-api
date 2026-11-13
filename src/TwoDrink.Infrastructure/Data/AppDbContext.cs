@@ -63,6 +63,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.Hash).HasMaxLength(64);
             e.HasIndex(x => new { x.AccountId, x.Sequence }).IsUnique();
             e.HasIndex(x => new { x.AccountId, x.CreatedAt });
+            // Hot-path lookups (hydration reconcile, confirm replay) under the per-user lock.
+            e.HasIndex(x => x.CheckInId).HasFilter("check_in_id IS NOT NULL");
+            e.HasIndex(x => x.ReversesEntryId).HasFilter("reverses_entry_id IS NOT NULL");
             e.HasOne<LedgerAccount>().WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Restrict);
         });
 
