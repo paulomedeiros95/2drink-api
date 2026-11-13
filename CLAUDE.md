@@ -124,3 +124,57 @@ Docker must be able to pull `postgres:17` and `testcontainers/ryuk` from Docker 
   (the job may be silently failing or not running).
 - Seasons are seeded only up to 2027-06-30; later seasons need the admin panel or a manual insert into `seasons` (as owner),
   or league creation fails with `dates_outside_season` and check-ins get no badges.
+
+## Testar localmente (Swagger)
+
+Passo a passo para quem nao e programador, no Windows. Tudo roda na sua maquina; nada disso existe em producao
+(Swagger, OpenAPI e `POST /dev/token` so existem em `Development`). Pre-requisitos: Docker Desktop aberto, .NET 10 SDK, Git Bash ou PowerShell na pasta do repo.
+
+1. **Subir Postgres e Azurite** (armazenamento das selfies):
+   `docker compose -f docker-compose.dev.yml up -d`
+2. **Segredos locais** (ficam no seu usuario do Windows, nunca no Git). Troque o que estiver entre `<...>`:
+   ```
+   dotnet user-secrets set "ConnectionStrings:Default" "Host=localhost;Port=5432;Database=twodrink;Username=twodrink_api_dev;Password=api_dev_pw" --project src/TwoDrink.Api
+   dotnet user-secrets set "Jwt:SigningKey" "<texto aleatorio com 64 caracteres>" --project src/TwoDrink.Api
+   dotnet user-secrets set "Storage:ConnectionString" "UseDevelopmentStorage=true" --project src/TwoDrink.Api
+   dotnet user-secrets set "Google:PlacesApiKey" "<chave do Google Places da dona do produto>" --project src/TwoDrink.Api
+   ```
+   Os dois ultimos itens sao opcionais: sem `Google:PlacesApiKey`, `GET /venues/nearby` responde 503 `places_unavailable`
+   (veja o passo 9). Em Development nao precisa de `Auth:Google:ClientIds` / `Auth:Apple:Audiences`
+   (so seriam necessarios para login real com Google/Apple).
+   O que nao e segredo ja vem em `src/TwoDrink.Api/appsettings.Development.json` (`DevAuth:Enabled`, `Storage:AllowHttpSas`, `Invites:BaseUrl`...).
+3. **Criar as tabelas** (como DONO do banco, `twodrink_owner`):
+   `dotnet tool restore`
+   `dotnet ef database update --project src/TwoDrink.Infrastructure --startup-project src/TwoDrink.Api --connection "Host=localhost;Port=5432;Database=twodrink;Username=twodrink_owner;Password=owner_dev_pw"`
+   (se o Windows bloquear com "Controle de Aplicativo", acrescente `--configuration Release`).
+4. **Criar o login da API** (a API nunca conecta como dono; rode depois do passo 3, pode repetir sem problema):
+   `docker compose -f docker-compose.dev.yml exec -T postgres psql -U twodrink_owner -d twodrink < scripts/dev-create-api-login.sql`
+   (no PowerShell, use: `Get-Content scripts/dev-create-api-login.sql | docker compose -f docker-compose.dev.yml exec -T postgres psql -U twodrink_owner -d twodrink`)
+5. **Rodar a API**: `dotnet run --project src/TwoDrink.Api` (perfil `http`, porta **5088**, abre o navegador em `/swagger`).
+   Se o navegador nao abrir: `http://localhost:5088/swagger`. O documento OpenAPI fica em `http://localhost:5088/openapi/v1.json`.
+6. **Entrar sem Google/Apple**: em `POST /dev/token` clique em "Try it out" e envie
+   `{ "subject": "ana", "displayName": "Ana", "completeProfile": true }`. A resposta traz `accessToken`.
+   `completeProfile: true` deixa o perfil adulto completo (necessario para quase todos os endpoints).
+   Use outro `subject` (`bia`, `caio`...) para simular outros jogadores.
+7. **Autorizar**: clique no botao **Authorize** (cadeado, no topo), cole **somente** o `accessToken` (sem a palavra `Bearer`; o Swagger a coloca)
+   e confirme. O token vale 1h; depois repita o passo 6 (ou use `POST /auth/refresh`).
+8. **Testar**: `GET /me` (200 com seu nome), `GET /me/ledger`, `GET /me/leagues`.
+9. **Bares** — `GET /venues/nearby?lat=-23.55&lng=-46.63` precisa de uma chave real do Google Places (`Google:PlacesApiKey`, e a dona do produto quem tem);
+   sem ela volta 503 `places_unavailable`. Para testar check-in sem a chave, crie um bar de teste (como dono):
+   `docker compose -f docker-compose.dev.yml exec -T postgres psql -U twodrink_owner -d twodrink < scripts/dev-seed-venue.sql`
+   Ele cria o "Bar de Teste", id `11111111-1111-1111-1111-111111111111`, em lat `-23.5505`, lng `-46.6333`.
+10. **Check-in** (3 passos):
+    1. `POST /checkins/intents` com `{ "venueId": "11111111-1111-1111-1111-111111111111", "lat": -23.5505, "lng": -46.6333, "accuracyM": 10, "isMocked": false }`.
+       Copie `intentId` e `uploadUrl` (valem 10 min). Longe do bar (mais de 70 m) dara 422 `out_of_range`.
+    2. Envie a foto JPEG direto ao armazenamento (nao passa pelo Swagger; terminal, colando o `uploadUrl` entre aspas):
+       `curl -X PUT "<uploadUrl>" -H "x-ms-blob-type: BlockBlob" -H "Content-Type: image/jpeg" --data-binary @selfie.jpg` (deve responder 201).
+    3. `POST /checkins/intents/{intentId}/confirm` com `{ "lat": -23.5505, "lng": -46.6333, "accuracyM": 10, "isMocked": false, "drinks": [ { "type": "Beer", "quantity": 1 } ] }`.
+       Tipos de bebida: Beer, Drink, Gin, Shot, Wine, Water, Juice, Soda, Whey. Depois veja `GET /me/ledger`; `POST /checkins/{checkInId}/drinks` adiciona bebidas.
+    Regras de tempo (intervalo de 1h entre check-ins, 15 min no mesmo bar) valem de verdade: um segundo check-in logo em seguida da 422 `cooldown_same_venue` ou `cooldown_any_venue`.
+11. **Ligas**: `POST /leagues` com `{ "name": "Liga Teste", "startDate": "2026-11-20", "endDate": "2026-12-20" }` (as datas precisam caber numa temporada;
+    hoje existem 2026 2o semestre e 2027 1o semestre); `POST /leagues/{id}/invites` gera o link; com **outro** `subject` (novo token + Authorize),
+    `POST /invites/{token}/accept` entra na liga (cole so o `token`, o final do link); `GET /leagues/{id}/standings` mostra o ranking.
+12. **Parar tudo**: `Ctrl+C` na janela da API e `docker compose -f docker-compose.dev.yml down` (os dados do banco e das fotos sao apagados; nao ha volumes).
+
+Notas: `POST /dev/token` so existe com `ASPNETCORE_ENVIRONMENT=Development` **e** `DevAuth:Enabled=true`; fora disso a rota nao existe (usuarios `dev:<subject>` sao criados como Google). Chamadas anonimas a rotas que
+nao existem respondem 401 (politica padrao exige login), nao 404.

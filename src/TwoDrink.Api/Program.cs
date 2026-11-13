@@ -63,6 +63,7 @@ app.MapCheckInIntentEndpoints();
 app.MapCheckInEndpoints();
 app.MapLeagueEndpoints();
 app.MapInviteEndpoints();
+app.MapDevAuthEndpoints(); // Development + DevAuth:Enabled only
 app.MapApiDocs(); // Development only
 
 app.Run();
