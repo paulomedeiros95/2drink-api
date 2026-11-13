@@ -305,4 +305,70 @@ public class CheckInComplementTests(ApiFactory factory) : CheckInTestBase(factor
         using var anon = F.CreateClient();
         Assert.Equal(HttpStatusCode.Unauthorized, (await anon.GetAsync("/me/ledger")).StatusCode);
     }
+
+    // ---- admin-style corrections (spec 5.11) must not confuse the hydration balance ----
+
+    /// <summary>Appends an admin-style Reversal of the check-in's entry of the given drink type, through the ledger writer.</summary>
+    private async Task ReverseDrink(Guid checkInId, DrinkType type)
+    {
+        using var scope = F.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TwoDrink.Infrastructure.Data.AppDbContext>();
+        var writer = scope.ServiceProvider.GetRequiredService<TwoDrink.Infrastructure.Ledger.LedgerWriter>();
+        await using var tx = await db.Database.BeginTransactionAsync();
+        var target = await db.LedgerEntries.SingleAsync(e => e.CheckInId == checkInId && e.Type == LedgerEntryType.Drink && e.DrinkType == type);
+        await writer.AppendAsync(target.AccountId,
+            [new TwoDrink.Infrastructure.Ledger.NewEntry(LedgerEntryType.Reversal, -target.Points, VenueId: target.VenueId,
+                CheckInId: checkInId, ReversesEntryId: target.Id, Reason: "admin_correction", ActorAdmin: "admin")], CancellationToken.None);
+        await tx.CommitAsync();
+    }
+
+    private async Task<List<LedgerEntry>> CheckInEntries(Guid checkInId)
+    {
+        await using var db = F.NewDb();
+        return await db.LedgerEntries.Where(e => e.CheckInId == checkInId).OrderBy(e => e.Sequence).ToListAsync();
+    }
+
+    [Fact]
+    public async Task Admin_reversal_of_a_beer_line_does_not_duplicate_or_throw_in_reconciliation()
+    {
+        var c = await Confirm(InsideBar, (DrinkType.Beer, 2), (DrinkType.Water, 1)); // bonus +2
+        await ReverseDrink(c.CheckInId, DrinkType.Beer);                            // balance of all reversals = 0 now
+
+        var r = await Complement(c, InsideBar, (DrinkType.Soda, 1));                // goal still met (1 water, 0 live beers)
+        Assert.Equal(1.5m, r.PointsAwarded);
+        var entries = await CheckInEntries(c.CheckInId);
+        Assert.Single(entries, e => e.Type == LedgerEntryType.HydrationBonus);
+        Assert.True((await LoadCheckIn(c.CheckInId)).HydrationMet);
+    }
+
+    [Fact]
+    public async Task Reversed_water_no_longer_counts_toward_the_goal()
+    {
+        var c = await Confirm(InsideBar, (DrinkType.Beer, 1), (DrinkType.Water, 1)); // bonus +2
+        await ReverseDrink(c.CheckInId, DrinkType.Water);
+
+        var r = await Complement(c, InsideBar, (DrinkType.Soda, 1));                 // 0 live waters: bonus reversed
+        Assert.Equal(1.5m - 2m, r.PointsAwarded);
+        Assert.False((await LoadCheckIn(c.CheckInId)).HydrationMet);
+        var entries = await CheckInEntries(c.CheckInId);
+        var bonus = Assert.Single(entries, e => e.Type == LedgerEntryType.HydrationBonus);
+        Assert.Contains(entries, e => e.Reason == "hydration_goal_lost" && e.ReversesEntryId == bonus.Id);
+
+        // a fresh water brings the goal back
+        Assert.Equal(1.5m + 2m, (await Complement(c, InsideBar, (DrinkType.Water, 1))).PointsAwarded);
+    }
+
+    [Fact]
+    public async Task New_checkin_after_window_closes_previous_at_complements_until()
+    {
+        var first = await Confirm(InsideBar, (DrinkType.Beer, 1));
+        var until = (await LoadCheckIn(first.CheckInId)).ComplementsUntil;
+        Clock.Advance(TimeSpan.FromHours(20));
+        var bar2 = await AddVenue();
+        await F.ReauthenticateAsync(Me);
+        var intent = await CreateIntent(Me, bar2, InsideBar);
+        await Upload(intent.UploadUrl);
+        await ReadConfirm(await PostConfirm(Me, intent.IntentId, InsideBar, (DrinkType.Beer, 1)));
+        Assert.Equal(until, (await LoadCheckIn(first.CheckInId)).ClosedAt);
+    }
 }

@@ -132,7 +132,7 @@ public class CheckInService(
         await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({AdvisoryLocks.CheckIns}, hashtext({userKey}))", ct);
 
         var checkIn = (await db.CheckIns
-            .FromSql($"SELECT * FROM check_ins WHERE id = {checkInId} FOR UPDATE")
+            .FromSql($"SELECT * FROM check_ins WHERE id = {checkInId} AND user_id = {userId} FOR UPDATE")
             .ToListAsync(ct)).SingleOrDefault();
         if (checkIn is null || checkIn.UserId != userId)
             throw new CheckInNotFoundException();

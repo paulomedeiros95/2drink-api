@@ -11,7 +11,7 @@ public class CheckInCloser(AppDbContext db, TimeProvider time)
     {
         var now = time.GetUtcNow();
         await db.CheckIns.Where(c => c.Id == checkInId && c.ClosedAt == null)
-            .ExecuteUpdateAsync(s => s.SetProperty(c => c.ClosedAt, now), ct);
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.ClosedAt, c => c.ComplementsUntil < now ? c.ComplementsUntil : now), ct);
     }
 
     /// <summary>Closes every check-in whose complement window is over; returns how many were closed.</summary>
@@ -19,7 +19,7 @@ public class CheckInCloser(AppDbContext db, TimeProvider time)
     {
         var now = time.GetUtcNow();
         return await db.CheckIns.Where(c => c.ClosedAt == null && c.ComplementsUntil <= now)
-            .ExecuteUpdateAsync(s => s.SetProperty(c => c.ClosedAt, now), ct);
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.ClosedAt, c => c.ComplementsUntil < now ? c.ComplementsUntil : now), ct);
     }
 }
 
