@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using TwoDrink.Infrastructure.Auth;
@@ -17,7 +18,7 @@ public static class AuthSetup
         services.AddOptions<JwtOptions>().Bind(config.GetSection(JwtOptions.Section));
         services.AddOptions<ExternalAuthOptions>().Bind(config.GetSection(ExternalAuthOptions.Section));
         services.AddSingleton<GoogleTokenValidator>();
-        services.AddSingleton<AppleTokenValidator>();
+        services.AddSingleton(sp => new AppleTokenValidator(sp.GetRequiredService<IOptions<ExternalAuthOptions>>()));
         services.AddSingleton<IExternalTokenValidator, ExternalTokenValidator>();
         services.AddSingleton<JwtIssuer>();
         services.AddScoped<SessionService>();
@@ -51,14 +52,50 @@ public static class AuthSetup
             });
 
         services.AddScoped<IAuthorizationHandler, CompleteProfileHandler>();
-        services.AddAuthorizationBuilder().AddPolicy(PlayerPolicy, p => p
-            .RequireAuthenticatedUser()
-            .AddRequirements(new CompleteProfileRequirement()));
+        services.AddSingleton<IAuthorizationMiddlewareResultHandler, ProblemAuthorizationResultHandler>();
+        services.AddAuthorizationBuilder()
+            // Secure by default: an endpoint without its own policy still needs a signed-in user
+            // (/auth/* and /health opt out with AllowAnonymous).
+            .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build())
+            .AddPolicy(PlayerPolicy, p => p
+                .RequireAuthenticatedUser()
+                .AddRequirements(new CompleteProfileRequirement()));
         return services;
     }
 }
 
 public class CompleteProfileRequirement : IAuthorizationRequirement;
+
+/// <summary>
+/// A "Player" 403 caused by an incomplete profile becomes ProblemDetails with <c>code = profile_incomplete</c>, so the app
+/// can send the user to the profile screen. Everything else keeps the default behaviour.
+/// </summary>
+public class ProblemAuthorizationResultHandler(IProblemDetailsService problems) : IAuthorizationMiddlewareResultHandler
+{
+    private readonly AuthorizationMiddlewareResultHandler _default = new();
+
+    public async Task HandleAsync(RequestDelegate next, HttpContext context, AuthorizationPolicy policy, PolicyAuthorizationResult authorizeResult)
+    {
+        if (authorizeResult.Forbidden
+            && authorizeResult.AuthorizationFailure?.FailedRequirements.OfType<CompleteProfileRequirement>().Any() == true)
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await problems.WriteAsync(new ProblemDetailsContext
+            {
+                HttpContext = context,
+                ProblemDetails =
+                {
+                    Status = StatusCodes.Status403Forbidden,
+                    Title = "Profile incomplete",
+                    Detail = "Complete your profile to use this feature.",
+                    Extensions = { ["code"] = "profile_incomplete" },
+                },
+            });
+            return;
+        }
+        await _default.HandleAsync(next, context, policy, authorizeResult);
+    }
+}
 
 /// <summary>The "Player" policy: the signed-in user must have a complete profile (read from the database, not the token).</summary>
 public class CompleteProfileHandler(AppDbContext db) : AuthorizationHandler<CompleteProfileRequirement>

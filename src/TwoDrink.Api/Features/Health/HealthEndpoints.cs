@@ -11,9 +11,10 @@ public static class HealthEndpoints
     }
 
     // Healthy -> 200, Unhealthy -> 503 (default HealthCheck status mapping).
+    // Anonymous and exempt from rate limiting (probes from the platform must never be throttled).
     public static IEndpointRouteBuilder MapHealthEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapHealthChecks("/health");
+        app.MapHealthChecks("/health").AllowAnonymous().DisableRateLimiting();
         return app;
     }
 }

@@ -1,6 +1,3 @@
-using System.Security.Claims;
-using System.Threading.RateLimiting;
-using Microsoft.EntityFrameworkCore;
 using TwoDrink.Api.Errors;
 using TwoDrink.Api.Features.Auth;
 using TwoDrink.Api.Features.CheckIns;
@@ -9,6 +6,7 @@ using TwoDrink.Api.Features.Leagues;
 using TwoDrink.Api.Features.Me;
 using TwoDrink.Api.Features.Venues;
 using TwoDrink.Api.Jobs;
+using TwoDrink.Api.Startup;
 using TwoDrink.Domain.Rules;
 using TwoDrink.Infrastructure.Data;
 using TwoDrink.Infrastructure.Ledger;
@@ -40,28 +38,19 @@ if (builder.Configuration.GetValue("CheckIns:IntentCleanupJobEnabled", true))
 if (builder.Configuration.GetValue("Trophies:AwarderJobEnabled", true))
     builder.Services.AddHostedService<TrophyAwarderJob>();
 
-builder.Services.AddRateLimiter(options =>
-{
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
-    {
-        var user = ctx.User.FindFirstValue(AuthSetup.SubjectClaim);
-        var key = user ?? ctx.Connection.RemoteIpAddress?.ToString() ?? "anonymous";
-        return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
-        {
-            PermitLimit = 120,
-            Window = TimeSpan.FromMinutes(1),
-        });
-    });
-});
+builder.Services.AddRequiredConfigValidation();
+builder.Services.AddForwardedHeadersFromConfig();
+builder.Services.AddRateLimitingFromConfig();
 
 var app = builder.Build();
 
+// Client IP must be resolved before the rate limiter partitions by it (deploy: ForwardedHeaders section, see CLAUDE.md).
+app.UseForwardedHeaders();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseAuthentication();
+app.UseRateLimiter(); // after authentication (partitions by "sub"), before authorization (limits rejected calls too)
 app.UseAuthorization();
-app.UseRateLimiter();
 
 app.MapHealthEndpoints();
 app.MapAuthEndpoints();

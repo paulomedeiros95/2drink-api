@@ -77,6 +77,10 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
+        // Not "Development": the production startup checks apply, and no developer user-secrets leak into tests.
+        builder.UseEnvironment("Testing");
+        builder.UseSetting("Auth:Google:ClientIds:0", "test-client.apps.googleusercontent.com");
+        builder.UseSetting("Auth:Apple:Audiences:0", "app.2drink.test");
         builder.UseSetting("ConnectionStrings:Default", AppConnectionString);
         builder.UseSetting("Ledger:VerificationJobEnabled", "false");
         builder.UseSetting("CheckIns:CloserJobEnabled", "false");

@@ -165,7 +165,7 @@ public class AuthTests(ApiFactory factory) : IClassFixture<ApiFactory>
     public async Task Player_endpoints_require_complete_profile()
     {
         var http = Authed(await Login("g-incomplete"));
-        Assert.Equal(HttpStatusCode.Forbidden, (await http.GetAsync("/me")).StatusCode);
+        await AssertProblem(await http.GetAsync("/me"), 403, "profile_incomplete");
         Assert.Equal(HttpStatusCode.Unauthorized, (await factory.CreateClient().GetAsync("/me")).StatusCode);
 
         await PutProfile(http, new DateOnly(1990, 1, 1));
@@ -180,6 +180,15 @@ public class AuthTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var res = await factory.CreateClient().PostAsJsonAsync(path, new Dictionary<string, string> { [field] = "bad" });
         Assert.Equal(HttpStatusCode.Unauthorized, res.StatusCode);
         Assert.Equal("application/problem+json", res.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Theory]
+    [InlineData("/auth/google", "idToken")]
+    [InlineData("/auth/apple", "identityToken")]
+    public async Task Validator_misconfiguration_is_503_auth_unavailable(string path, string field)
+    {
+        var res = await factory.CreateClient().PostAsJsonAsync(path, new Dictionary<string, string> { [field] = "unavailable:x" });
+        await AssertProblem(res, 503, "auth_unavailable");
     }
 
     [Fact]
