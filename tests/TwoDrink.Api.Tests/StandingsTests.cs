@@ -171,6 +171,79 @@ public class StandingsTests(ApiFactory factory) : CheckInTestBase(factory)
         Assert.Equal(await LedgerTotal(Me), row.Points);
     }
 
+    async Task<ComplementResult> ComplementAs(PlayerClient p, Guid checkInId, GeoPoint at, params (DrinkType Type, int Quantity)[] lines)
+    {
+        await F.ReauthenticateAsync(p);
+        var res = await p.Http.PostAsJsonAsync($"/checkins/{checkInId}/drinks",
+            new { lat = at.Lat, lng = at.Lng, accuracyM = 10, isMocked = false, drinks = lines.Select(l => new { type = l.Type.ToString(), quantity = l.Quantity }).ToArray() });
+        Assert.True(res.IsSuccessStatusCode, $"complement returned {(int)res.StatusCode}: {await res.Content.ReadAsStringAsync()}");
+        return (await res.Content.ReadFromJsonAsync<ComplementResult>(Json))!;
+    }
+
+    async Task ReverseEntry(Guid checkInId, LedgerEntryType type)
+    {
+        using var scope = F.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TwoDrink.Infrastructure.Data.AppDbContext>();
+        var writer = scope.ServiceProvider.GetRequiredService<LedgerWriter>();
+        await using var tx = await db.Database.BeginTransactionAsync();
+        var target = await db.LedgerEntries.SingleAsync(e => e.CheckInId == checkInId && e.Type == type);
+        await writer.AppendAsync(target.AccountId,
+            [new NewEntry(LedgerEntryType.Reversal, -target.Points, VenueId: target.VenueId, CheckInId: checkInId,
+                ReversesEntryId: target.Id, Reason: "admin_correction", ActorAdmin: "admin")], CancellationToken.None);
+        await tx.CommitAsync();
+    }
+
+    // ---- reversals follow the league window of the entry they reverse ----
+
+    [Fact]
+    public async Task Reversal_of_entry_made_before_joining_does_not_count()
+    {
+        var b = await NewPlayer();
+        var league = await CreateLeague(Me, Feb1, Feb28);
+        var c = await ConfirmAt(b, Bar, InsideBar, (DrinkType.Beer, 2), (DrinkType.Water, 1));   // bonus +2, before joining
+        Clock.Advance(TimeSpan.FromHours(2));
+        await Join(Me, b, league);
+        Clock.Advance(TimeSpan.FromHours(1));
+        var broke = await ComplementAs(b, c.CheckInId, InsideBar, (DrinkType.Beer, 2));           // goal lost: -2 reversal of the +2
+
+        var row = Assert.Single(await Standings(Me, league), r => r.UserId == b.UserId);
+        Assert.Equal(broke.PointsAwarded + 2m, row.Points);                                        // only the complement's drinks: reversal excluded
+        Assert.True(row.Points > 0);
+        Assert.Equal(c.PointsAwarded + broke.PointsAwarded, await LedgerTotal(b));
+    }
+
+    [Fact]
+    public async Task Reversal_inside_window_of_entry_inside_window_counts()
+    {
+        var b = await NewPlayer();
+        var league = await CreateLeague(Me, Feb1, Feb28);
+        await Join(Me, b, league);
+        var c = await ConfirmAt(b, Bar, InsideBar, (DrinkType.Beer, 2), (DrinkType.Water, 1));
+        Clock.Advance(TimeSpan.FromHours(1));
+        await ComplementAs(b, c.CheckInId, InsideBar, (DrinkType.Beer, 2));
+
+        var row = Assert.Single(await Standings(Me, league), r => r.UserId == b.UserId);
+        Assert.Equal(await LedgerTotal(b), row.Points);
+    }
+
+    [Fact]
+    public async Task Reversal_after_league_end_of_entry_inside_window_counts_in_that_league()
+    {
+        var league = await CreateLeague(Me, Feb1, Feb15);
+        var c = await Confirm(InsideBar, (DrinkType.Beer, 2), (DrinkType.Water, 1));              // bonus +2 inside the window
+        Clock.SetUtcNow(DateTimeOffset.Parse("2027-02-16T03:02:01Z"));
+        await AwardDue();
+        var trophyBefore = await TrophyCount(league);
+        Assert.Equal(c.PointsAwarded, Assert.Single(await Standings(Me, league)).Points);
+
+        await ReverseEntry(c.CheckInId, LedgerEntryType.HydrationBonus);                          // created after the league ended
+
+        var row = Assert.Single(await Standings(Me, league));
+        Assert.Equal(c.PointsAwarded - 2m, row.Points);
+        Assert.Equal(await LedgerTotal(Me), row.Points);
+        Assert.Equal(trophyBefore, await TrophyCount(league));
+    }
+
     // ---- ranking and visibility ----
 
     [Fact]

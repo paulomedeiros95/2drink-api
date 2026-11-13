@@ -84,7 +84,8 @@ Docker must be able to pull `postgres:17` and `testcontainers/ryuk` from Docker 
 
 ## Standings and trophies
 
-- `GET /leagues/{id}/standings` (Player policy, `StandingsQuery`): one SQL query over the ledger; window per member is `[max(JoinedAt, start), end+1 00:00 SP)`, points = sum of all entry types, distinct venues from `CheckIn` entries; members ranked are those with `LeftAt == null || LeftAt >= end` (membership at the league end). Competition ranking (1,1,3); unknown league or non-member -> 404 `not_member`.
+- `GET /leagues/{id}/standings` (Player policy, `StandingsQuery`): one SQL query over the ledger; window per member is `[max(JoinedAt, start), end+1 00:00 SP)`, points = sum of all entry types, but a `Reversal` is windowed by the `CreatedAt` of the entry it reverses (PK lookup in the same query), not its own, so it counts in a league only if the original did; distinct venues from `CheckIn` entries; members ranked are those with `LeftAt == null || LeftAt >= end` (membership at the league end). Competition ranking (1,1,3); unknown league or non-member -> 404 `not_member`.
+- Consequence: a reversal created after a league ended can still change that ended league's displayed standings (it follows its original entry); the Golden Trophy already awarded is never revoked, so standings and trophy may diverge (accepted).
 - `TrophyAwarder.AwardDueAsync` (+ `TrophyAwarderJob` every 5 min, `Trophies:AwarderJobEnabled=false` in tests): per ended league, own transaction, `FOR UPDATE` on the league row, re-checks `TrophiesAwardedAt`; no champion still marks the league. `GET /me/trophies` lists a player's trophies newest first.
 
 ## Ledger
