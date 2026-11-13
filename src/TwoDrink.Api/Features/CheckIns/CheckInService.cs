@@ -118,9 +118,12 @@ public class CheckInService(
         if (season is not null)
         {
             var (tier, artUrl) = await tiers.CurrentAsync(venueId, now, ct);
-            var held = await db.UserBadges.AsNoTracking()
+            // Tier is stored as its name, so SQL MAX would compare alphabetically: take the max over the enum in memory.
+            var heldTiers = await db.UserBadges.AsNoTracking()
                 .Where(b => b.UserId == userId && b.VenueId == venueId && b.SeasonId == season.Id)
-                .MaxAsync(b => (Tier?)b.Tier, ct);
+                .Select(b => b.Tier)
+                .ToListAsync(ct);
+            Tier? held = heldTiers.Count == 0 ? null : heldTiers.Max();
             if (BadgeEligibility.ShouldGrant(tier, held))
                 badge = new UserBadge
                 {

@@ -1,6 +1,7 @@
 using Azure;
 using Azure.Core;
 using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
 using Azure.Storage.Sas;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -67,7 +68,19 @@ public sealed class BlobPhotoStorage(IConfiguration config, TimeProvider time, I
             {
                 return null; // the source vanished between the check and the copy
             }
-            return await PropertiesOrNullAsync(target, ct);
+            BlobProperties props;
+            try
+            {
+                props = (await target.GetPropertiesAsync(cancellationToken: ct)).Value;
+            }
+            catch (RequestFailedException e) when (e.Status == 404)
+            {
+                throw new PhotoStorageUnavailableException(e); // the copy reported completion but left nothing behind
+            }
+            if (props.CopyStatus != CopyStatus.Success)
+                throw new PhotoStorageUnavailableException(new InvalidOperationException(
+                    $"Copy to {destinationBlobName} ended with status {props.CopyStatus}: {props.CopyStatusDescription}"));
+            return new PhotoInfo(props.ContentLength, props.ContentType);
         }, ct);
     }
 

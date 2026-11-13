@@ -91,6 +91,37 @@ public class CheckInConfirmTests(ApiFactory factory) : CheckInTestBase(factory)
     }
 
     [Fact]
+    public async Task Same_tier_after_evolution_gives_no_badge()
+    {
+        // Held: Default, Bronze. By name "Default" > "Bronze"; by tier Bronze is the highest.
+        Assert.Equal(Tier.Default, (await Confirm(InsideBar, (DrinkType.Beer, 1))).Badge!.Tier);
+        await Sponsor(Bar, Tier.Bronze);
+        Clock.Advance(TimeSpan.FromHours(16));
+        Assert.Equal(Tier.Bronze, (await Confirm(InsideBar, (DrinkType.Beer, 1))).Badge!.Tier);
+        Clock.Advance(TimeSpan.FromHours(16));
+        var r = await Confirm(InsideBar, (DrinkType.Beer, 1));
+        Assert.Null(r.Badge);
+        Assert.Equal(1m, r.PointsAwarded);
+    }
+
+    [Fact]
+    public async Task Lower_tier_than_highest_held_gives_no_badge()
+    {
+        // Held: Prata, Epic. By name "Prata" > "Ouro" > "Epic"; by tier Epic is the highest, so Ouro is a drop.
+        await Sponsor(Bar, Tier.Prata);
+        Assert.Equal(Tier.Prata, (await Confirm(InsideBar, (DrinkType.Beer, 1))).Badge!.Tier); // +5 +1
+        await Sponsor(Bar, Tier.Epic);
+        Clock.Advance(TimeSpan.FromHours(16));
+        Assert.Equal(Tier.Epic, (await Confirm(InsideBar, (DrinkType.Beer, 1))).Badge!.Tier);  // +50 +1
+        await EndSponsorship(Bar);
+        await Sponsor(Bar, Tier.Ouro);
+        Clock.Advance(TimeSpan.FromHours(16));
+        var r = await Confirm(InsideBar, (DrinkType.Beer, 1));                                  // +1
+        Assert.Null(r.Badge);
+        Assert.Equal(58m, await LedgerTotal(Me));
+    }
+
+    [Fact]
     public async Task Badge_points_are_frozen_when_tier_later_drops()
     {
         await Sponsor(Bar, Tier.Epic);
