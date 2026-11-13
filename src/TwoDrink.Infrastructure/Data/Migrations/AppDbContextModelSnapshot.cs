@@ -165,6 +165,52 @@ namespace TwoDrink.Infrastructure.Data.Migrations
                     b.ToTable("refresh_tokens", (string)null);
                 });
 
+            modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.Season", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateOnly>("EndDate")
+                        .HasColumnType("date")
+                        .HasColumnName("end_date");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("name");
+
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date")
+                        .HasColumnName("start_date");
+
+                    b.HasKey("Id")
+                        .HasName("pk_seasons");
+
+                    b.HasIndex("StartDate", "EndDate")
+                        .HasDatabaseName("ix_seasons_start_date_end_date");
+
+                    b.ToTable("seasons", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("5ea50000-2026-4000-8000-000000000002"),
+                            EndDate = new DateOnly(2026, 12, 31),
+                            Name = "2026 – 2º semestre",
+                            StartDate = new DateOnly(2026, 7, 1)
+                        },
+                        new
+                        {
+                            Id = new Guid("5ea50000-2027-4000-8000-000000000001"),
+                            EndDate = new DateOnly(2027, 6, 30),
+                            Name = "2027 – 1º semestre",
+                            StartDate = new DateOnly(2027, 1, 1)
+                        });
+                });
+
             modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -231,6 +277,97 @@ namespace TwoDrink.Infrastructure.Data.Migrations
                     b.ToTable("users", (string)null);
                 });
 
+            modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.Venue", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("address");
+
+                    b.Property<DateTimeOffset>("CachedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cached_at");
+
+                    b.Property<double>("Lat")
+                        .HasColumnType("double precision")
+                        .HasColumnName("lat");
+
+                    b.Property<double>("Lng")
+                        .HasColumnType("double precision")
+                        .HasColumnName("lng");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("PlaceId")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("place_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_venues");
+
+                    b.HasIndex("PlaceId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_venues_place_id");
+
+                    b.ToTable("venues", (string)null);
+                });
+
+            modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.VenueSponsorship", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("BadgeArtUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("badge_art_url");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset>("EndsAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ends_at");
+
+                    b.Property<DateTimeOffset>("StartsAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("starts_at");
+
+                    b.Property<string>("Tier")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("tier");
+
+                    b.Property<Guid>("VenueId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("venue_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_venue_sponsorships");
+
+                    b.HasIndex("VenueId", "StartsAt")
+                        .HasDatabaseName("ix_venue_sponsorships_venue_id_starts_at");
+
+                    b.ToTable("venue_sponsorships", (string)null);
+                });
+
             modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.LedgerEntry", b =>
                 {
                     b.HasOne("TwoDrink.Infrastructure.Data.Entities.LedgerAccount", null)
@@ -259,6 +396,16 @@ namespace TwoDrink.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_users_ledger_accounts_ledger_account_id");
+                });
+
+            modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.VenueSponsorship", b =>
+                {
+                    b.HasOne("TwoDrink.Infrastructure.Data.Entities.Venue", null)
+                        .WithMany()
+                        .HasForeignKey("VenueId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_venue_sponsorships_venues_venue_id");
                 });
 #pragma warning restore 612, 618
         }

@@ -11,6 +11,7 @@ using System.Text.Json;
 using TwoDrink.Domain.Rules;
 using TwoDrink.Infrastructure.Auth;
 using TwoDrink.Infrastructure.Data;
+using TwoDrink.Infrastructure.Places;
 
 namespace TwoDrink.Api.Tests.Infrastructure;
 
@@ -25,6 +26,9 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17").Build();
 
     public TestClock Clock { get; } = new();
+
+    /// <summary>Fake Google Places; call <see cref="FakePlacesClient.Reset"/> at the start of each test.</summary>
+    public FakePlacesClient Places { get; } = new();
 
     /// <summary>Container superuser (database owner): migrations, seeding that needs privileges, tampering tests.</summary>
     public string OwnerConnectionString => _postgres.GetConnectionString();
@@ -70,6 +74,8 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
             services.AddSingleton<TimeProvider>(Clock);
             services.RemoveAll<IExternalTokenValidator>();
             services.AddSingleton<IExternalTokenValidator, FakeExternalTokenValidator>();
+            services.RemoveAll<IPlacesClient>();
+            services.AddSingleton<IPlacesClient>(Places);
         });
     }
 

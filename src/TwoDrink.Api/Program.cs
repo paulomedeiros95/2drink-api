@@ -5,6 +5,7 @@ using TwoDrink.Api.Errors;
 using TwoDrink.Api.Features.Auth;
 using TwoDrink.Api.Features.Health;
 using TwoDrink.Api.Features.Me;
+using TwoDrink.Api.Features.Venues;
 using TwoDrink.Api.Jobs;
 using TwoDrink.Infrastructure.Data;
 using TwoDrink.Infrastructure.Ledger;
@@ -20,6 +21,7 @@ builder.Services.AddAuth(builder.Configuration);
 builder.Services.AddAppDbContext(sp => sp.GetRequiredService<IConfiguration>().GetConnectionString("Default"));
 
 builder.Services.AddHealth();
+builder.Services.AddVenues(builder.Configuration);
 builder.Services.AddScoped<LedgerWriter>();
 builder.Services.AddScoped<LedgerVerifier>();
 if (builder.Configuration.GetValue("Ledger:VerificationJobEnabled", true))
@@ -51,6 +53,7 @@ app.UseRateLimiter();
 app.MapHealthEndpoints();
 app.MapAuthEndpoints();
 app.MapProfileEndpoints();
+app.MapVenueEndpoints();
 
 app.Run();
 

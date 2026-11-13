@@ -12,4 +12,5 @@ public sealed record RulesOptions {
     public decimal HydrationBonus { get; init; } = 2m;
     public int MaxActiveLeaguesPerUser { get; init; } = 2;
     public TimeSpan InviteLifetime { get; init; } = TimeSpan.FromDays(7);
+    public TimeSpan VenueRefreshAge { get; init; } = TimeSpan.FromDays(30);
 }

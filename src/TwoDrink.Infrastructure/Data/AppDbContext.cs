@@ -11,6 +11,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<User> Users => Set<User>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
+    public DbSet<Venue> Venues => Set<Venue>();
+    public DbSet<VenueSponsorship> VenueSponsorships => Set<VenueSponsorship>();
+    public DbSet<Season> Seasons => Set<Season>();
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         b.Entity<User>(e =>
@@ -50,6 +54,35 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(x => x.Hash).HasMaxLength(64);
             e.HasIndex(x => new { x.AccountId, x.Sequence }).IsUnique();
             e.HasOne<LedgerAccount>().WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<Venue>(e =>
+        {
+            e.ToTable("venues");
+            e.Property(x => x.PlaceId).HasMaxLength(255);
+            e.Property(x => x.Name).HasMaxLength(255);
+            e.Property(x => x.Address).HasMaxLength(500);
+            e.HasIndex(x => x.PlaceId).IsUnique();
+        });
+
+        b.Entity<VenueSponsorship>(e =>
+        {
+            e.ToTable("venue_sponsorships");
+            e.Property(x => x.Tier).HasConversion<string>().HasMaxLength(32);
+            e.Property(x => x.BadgeArtUrl).HasMaxLength(2048);
+            e.Property(x => x.CreatedBy).HasMaxLength(255);
+            e.HasIndex(x => new { x.VenueId, x.StartsAt });
+            e.HasOne<Venue>().WithMany().HasForeignKey(x => x.VenueId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        var season2026H2 = new Season { Id = new Guid("5ea50000-2026-4000-8000-000000000002"), Name = "2026 – 2º semestre", StartDate = new DateOnly(2026, 7, 1), EndDate = new DateOnly(2026, 12, 31) };
+        var season2027H1 = new Season { Id = new Guid("5ea50000-2027-4000-8000-000000000001"), Name = "2027 – 1º semestre", StartDate = new DateOnly(2027, 1, 1), EndDate = new DateOnly(2027, 6, 30) };
+        b.Entity<Season>(e =>
+        {
+            e.ToTable("seasons");
+            e.Property(x => x.Name).HasMaxLength(100);
+            e.HasIndex(x => new { x.StartDate, x.EndDate });
+            e.HasData(season2026H2, season2027H1);
         });
     }
 }
