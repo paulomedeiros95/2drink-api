@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Time.Testing;
 using Npgsql;
 using Testcontainers.PostgreSql;
 using System.Net.Http.Headers;
@@ -25,8 +24,7 @@ public class ApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
 
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17").Build();
 
-    public FakeTimeProvider Clock { get; } =
-        new(new DateTimeOffset(2027, 2, 6, 20, 0, 0, TimeSpan.FromHours(-3)).ToUniversalTime()); // UTC: Npgsql rejects other offsets
+    public TestClock Clock { get; } = new();
 
     /// <summary>Container superuser (database owner): migrations, seeding that needs privileges, tampering tests.</summary>
     public string OwnerConnectionString => _postgres.GetConnectionString();

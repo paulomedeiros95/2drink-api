@@ -32,4 +32,4 @@ Docker must be able to pull `postgres:17` and `testcontainers/ryuk` from Docker 
   `dotnet user-secrets set "Jwt:SigningKey" "<random 64 chars>" --project src/TwoDrink.Api` (min 32 bytes; Key Vault in prod). Tests set their own key in `ApiFactory`.
 - Google/Apple audiences come from config: `Auth:Google:ClientIds` (array) and `Auth:Apple:Audiences` (array: bundle ID / Service ID). Tests replace `IExternalTokenValidator` with a fake (`valid:<subject>`).
 - Endpoints for players use the `"Player"` authorization policy (complete profile required). Tests get a ready player with `ApiFactory.CreatePlayerClientAsync(subject)`.
-- Test clock (`ApiFactory.Clock`) only moves forward; keep it in UTC (Npgsql rejects non-zero offsets).
+- Test clock (`ApiFactory.Clock`, a settable `TestClock`): `SetUtcNow`/`Advance`, may move backwards; keep it in UTC (Npgsql rejects non-zero offsets). Default start 2027-02-06T23:00Z.

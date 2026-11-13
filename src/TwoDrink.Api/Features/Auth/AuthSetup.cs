@@ -40,7 +40,7 @@ public static class AuthSetup
                     ValidAlgorithms = [Microsoft.IdentityModel.Tokens.SecurityAlgorithms.HmacSha256],
                     ValidateLifetime = true,
                     ClockSkew = TimeSpan.FromSeconds(30),
-                    // Expiry follows the same clock that issued the token (FakeTimeProvider in tests).
+                    // Expiry follows the same clock that issued the token (TestClock in tests).
                     LifetimeValidator = (notBefore, expires, _, p) =>
                     {
                         var now = time.GetUtcNow().UtcDateTime;

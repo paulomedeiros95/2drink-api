@@ -42,7 +42,7 @@ public class AuthTests(ApiFactory factory) : IClassFixture<ApiFactory>
 
     DateOnly Today() => TwoDrink.Domain.Rules.BusinessTime.Today(factory.Clock.GetUtcNow());
 
-    /// <summary>The clock only moves forward: advance to the next 02:00 UTC, which is still the previous day (23:00) in Sao Paulo.</summary>
+    /// <summary>Advance to the next 02:00 UTC, which is still the previous day (23:00) in Sao Paulo.</summary>
     void AdvanceToLateEveningInSaoPaulo()
     {
         var now = factory.Clock.GetUtcNow();
