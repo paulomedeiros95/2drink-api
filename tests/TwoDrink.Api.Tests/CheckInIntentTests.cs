@@ -117,6 +117,19 @@ public class CheckInIntentTests : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task Intent_requires_complete_profile()
+    {
+        var http = _f.CreateClient();
+        var login = await http.PostAsJsonAsync("/auth/google", new { idToken = "valid:incomplete-" + Guid.NewGuid().ToString("N") });
+        login.EnsureSuccessStatusCode();
+        var tokens = await login.Content.ReadFromJsonAsync<JsonElement>();
+        http.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", tokens.GetProperty("accessToken").GetString());
+        var res = await PostIntent(Guid.NewGuid(), InsideBar, http: http);
+        Assert.Equal(HttpStatusCode.Forbidden, res.StatusCode);
+    }
+
+    [Fact]
     public async Task Intent_within_cooldown_is_422()
     {
         var other = await AddVenue("intent-cd-other");

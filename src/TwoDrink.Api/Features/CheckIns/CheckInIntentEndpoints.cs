@@ -52,6 +52,8 @@ public static class CheckInIntentEndpoints
                 .MaxAsync(c => (DateTimeOffset?)c.CreatedAt, ct);
             cooldown.Ensure(now, lastHere, lastAnywhere);
 
+            await storage.EnsureReadyAsync(ct);
+
             var id = Guid.NewGuid();
             var intent = new CheckInIntent
             {
