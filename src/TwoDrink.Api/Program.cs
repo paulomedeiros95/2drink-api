@@ -5,6 +5,7 @@ using TwoDrink.Api.Errors;
 using TwoDrink.Api.Features.Auth;
 using TwoDrink.Api.Features.CheckIns;
 using TwoDrink.Api.Features.Health;
+using TwoDrink.Api.Features.Leagues;
 using TwoDrink.Api.Features.Me;
 using TwoDrink.Api.Features.Venues;
 using TwoDrink.Api.Jobs;
@@ -26,6 +27,7 @@ builder.Services.AddSingleton(builder.Configuration.GetSection("Rules").Get<Rule
 builder.Services.AddHealth();
 builder.Services.AddVenues(builder.Configuration);
 builder.Services.AddCheckIns();
+builder.Services.AddLeagues();
 builder.Services.AddScoped<LedgerWriter>();
 builder.Services.AddScoped<LedgerVerifier>();
 if (builder.Configuration.GetValue("Ledger:VerificationJobEnabled", true))
@@ -64,6 +66,8 @@ app.MapLedgerEndpoints();
 app.MapVenueEndpoints();
 app.MapCheckInIntentEndpoints();
 app.MapCheckInEndpoints();
+app.MapLeagueEndpoints();
+app.MapInviteEndpoints();
 
 app.Run();
 

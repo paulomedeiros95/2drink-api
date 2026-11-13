@@ -137,6 +137,133 @@ namespace TwoDrink.Infrastructure.Data.Migrations
                     b.ToTable("check_in_intents", (string)null);
                 });
 
+            modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.League", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("CoverBlobName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("cover_blob_name");
+
+                    b.Property<Guid>("CreatorId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("creator_id");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(280)
+                        .HasColumnType("character varying(280)")
+                        .HasColumnName("description");
+
+                    b.Property<DateOnly>("EndDate")
+                        .HasColumnType("date")
+                        .HasColumnName("end_date");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("SeasonId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("season_id");
+
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date")
+                        .HasColumnName("start_date");
+
+                    b.Property<DateTimeOffset?>("TrophiesAwardedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("trophies_awarded_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_leagues");
+
+                    b.HasIndex("CreatorId")
+                        .HasDatabaseName("ix_leagues_creator_id");
+
+                    b.HasIndex("SeasonId")
+                        .HasDatabaseName("ix_leagues_season_id");
+
+                    b.ToTable("leagues", (string)null);
+                });
+
+            modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.LeagueInvite", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid>("LeagueId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("league_id");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("token_hash");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("used_at");
+
+                    b.Property<Guid?>("UsedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("used_by");
+
+                    b.HasKey("Id")
+                        .HasName("pk_league_invites");
+
+                    b.HasIndex("LeagueId")
+                        .HasDatabaseName("ix_league_invites_league_id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_league_invites_token_hash");
+
+                    b.HasIndex("UsedBy")
+                        .HasDatabaseName("ix_league_invites_used_by");
+
+                    b.ToTable("league_invites", (string)null);
+                });
+
+            modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.LeagueMembership", b =>
+                {
+                    b.Property<Guid>("LeagueId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("league_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<DateTimeOffset>("JoinedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("joined_at");
+
+                    b.Property<DateTimeOffset?>("LeftAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("left_at");
+
+                    b.HasKey("LeagueId", "UserId")
+                        .HasName("pk_league_memberships");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_league_memberships_user_id");
+
+                    b.ToTable("league_memberships", (string)null);
+                });
+
             modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.LedgerAccount", b =>
                 {
                     b.Property<Guid>("Id")
@@ -585,6 +712,56 @@ namespace TwoDrink.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_check_in_intents_venues_venue_id");
+                });
+
+            modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.League", b =>
+                {
+                    b.HasOne("TwoDrink.Infrastructure.Data.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("CreatorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_leagues_users_creator_id");
+
+                    b.HasOne("TwoDrink.Infrastructure.Data.Entities.Season", null)
+                        .WithMany()
+                        .HasForeignKey("SeasonId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_leagues_seasons_season_id");
+                });
+
+            modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.LeagueInvite", b =>
+                {
+                    b.HasOne("TwoDrink.Infrastructure.Data.Entities.League", null)
+                        .WithMany()
+                        .HasForeignKey("LeagueId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_league_invites_leagues_league_id");
+
+                    b.HasOne("TwoDrink.Infrastructure.Data.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UsedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_league_invites_users_used_by");
+                });
+
+            modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.LeagueMembership", b =>
+                {
+                    b.HasOne("TwoDrink.Infrastructure.Data.Entities.League", null)
+                        .WithMany()
+                        .HasForeignKey("LeagueId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_league_memberships_leagues_league_id");
+
+                    b.HasOne("TwoDrink.Infrastructure.Data.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_league_memberships_users_user_id");
                 });
 
             modelBuilder.Entity("TwoDrink.Infrastructure.Data.Entities.LedgerEntry", b =>

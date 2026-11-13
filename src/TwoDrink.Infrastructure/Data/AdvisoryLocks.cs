@@ -9,7 +9,7 @@ public static class AdvisoryLocks
     /// <summary>Per ledger account: serialises appends so the hash chain cannot fork.</summary>
     public const int Ledger = 1;
 
-    /// <summary>Per user: league slot accounting (reserved for leagues).</summary>
+    /// <summary>Per user: league slot accounting (create league, accept invite).</summary>
     public const int LeagueSlots = 2;
 
     /// <summary>Per user: check-in confirmation (cooldowns, badges, idempotency).</summary>

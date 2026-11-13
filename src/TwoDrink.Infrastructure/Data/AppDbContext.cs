@@ -19,6 +19,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<CheckInIntent> CheckInIntents => Set<CheckInIntent>();
     public DbSet<UserBadge> UserBadges => Set<UserBadge>();
 
+    public DbSet<League> Leagues => Set<League>();
+    public DbSet<LeagueMembership> LeagueMemberships => Set<LeagueMembership>();
+    public DbSet<LeagueInvite> LeagueInvites => Set<LeagueInvite>();
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         b.Entity<User>(e =>
@@ -111,6 +115,36 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasOne<Venue>().WithMany().HasForeignKey(x => x.VenueId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<Season>().WithMany().HasForeignKey(x => x.SeasonId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<CheckIn>().WithMany().HasForeignKey(x => x.CheckInId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<League>(e =>
+        {
+            e.ToTable("leagues");
+            e.Property(x => x.Name).HasMaxLength(60);
+            e.Property(x => x.Description).HasMaxLength(280);
+            e.Property(x => x.CoverBlobName).HasMaxLength(200);
+            e.HasIndex(x => x.CreatorId);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.CreatorId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Season>().WithMany().HasForeignKey(x => x.SeasonId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<LeagueMembership>(e =>
+        {
+            e.ToTable("league_memberships");
+            e.HasKey(x => new { x.LeagueId, x.UserId });
+            e.HasIndex(x => x.UserId);
+            e.HasOne<League>().WithMany().HasForeignKey(x => x.LeagueId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<LeagueInvite>(e =>
+        {
+            e.ToTable("league_invites");
+            e.Property(x => x.TokenHash).HasMaxLength(64);
+            e.HasIndex(x => x.TokenHash).IsUnique();
+            e.HasIndex(x => x.LeagueId);
+            e.HasOne<League>().WithMany().HasForeignKey(x => x.LeagueId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<User>().WithMany().HasForeignKey(x => x.UsedBy).OnDelete(DeleteBehavior.Restrict);
         });
 
         var season2026H2 = new Season { Id = new Guid("5ea50000-2026-4000-8000-000000000002"), Name = "2026 – 2º semestre", StartDate = new DateOnly(2026, 7, 1), EndDate = new DateOnly(2026, 12, 31) };

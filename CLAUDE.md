@@ -64,3 +64,9 @@ Docker must be able to pull `postgres:17` and `testcontainers/ryuk` from Docker 
 - `HydrationReconciler` runs inside the confirm and complement transactions (+bonus when met, `Reversal` with `hydration_goal_lost` when lost).
 - `CheckInCloser` (`CloseAsync` idempotent, `SweepAsync`) only sets `ClosedAt`; `CheckInCloserJob` sweeps every 5 min (`CheckIns:CloserJobEnabled=false` in tests).
 - `GET /me/ledger?before=&limit=` (Player policy): own statement, newest first, `before` = Sequence cursor, limit 1..200 (422 `invalid_paging`).
+
+## Leagues
+
+- `POST /leagues`, `POST /leagues/{id}/invites` (creator only, 403 otherwise), `POST /invites/{token}/accept`, `POST /leagues/{id}/leave`, `GET /me/leagues` (all Player policy, `LeagueService`).
+- A membership occupies a slot while `LeftAt == null` and today (Sao Paulo) <= league end date; limit `Rules:MaxActiveLeaguesPerUser`. Create and accept run in one transaction under `pg_advisory_xact_lock(2, hashtext(userId))`; a failed accept check rolls the invite claim back.
+- Invite tokens: 32 random bytes base64url; only the SHA-256 hex hash is stored. Link base from `Invites:BaseUrl`.
