@@ -171,7 +171,7 @@ Passo a passo para quem nao e programador, no Windows. Tudo roda na sua maquina;
        `curl -X PUT "<uploadUrl>" -H "x-ms-blob-type: BlockBlob" -H "Content-Type: image/jpeg" --data-binary @selfie.jpg` (deve responder 201).
     3. `POST /checkins/intents/{intentId}/confirm` com `{ "lat": -23.5505, "lng": -46.6333, "accuracyM": 10, "isMocked": false, "drinks": [ { "type": "Beer", "quantity": 1 } ] }`.
        Tipos de bebida: Beer, Drink, Gin, Shot, Wine, Water, Juice, Soda, Whey. Depois veja `GET /me/ledger`; `POST /checkins/{checkInId}/drinks` adiciona bebidas.
-    Regras de tempo (intervalo de 1h entre check-ins, 15 min no mesmo bar) valem de verdade: um segundo check-in logo em seguida da 422 `cooldown_same_venue` ou `cooldown_any_venue`.
+    Regras de tempo (1h entre check-ins em bares diferentes, 15h no mesmo bar) valem de verdade: um segundo check-in logo em seguida da 422 `cooldown_same_venue` ou `cooldown_any_venue`.
 11. **Ligas**: `POST /leagues` com `{ "name": "Liga Teste", "startDate": "2026-11-20", "endDate": "2026-12-20" }` (as datas precisam caber numa temporada;
     hoje existem 2026 2o semestre e 2027 1o semestre); `POST /leagues/{id}/invites` gera o link; com **outro** `subject` (novo token + Authorize),
     `POST /invites/{token}/accept` entra na liga (cole so o `token`, o final do link); `GET /leagues/{id}/standings` mostra o ranking.
