@@ -24,8 +24,13 @@ public static class DevAuthEndpoints
     {
         if (!IsEnabled(app.Environment, app.Configuration)) return app;
 
-        app.MapPost("/dev/token", async (DevTokenRequest req, SessionService sessions, AppDbContext db, TimeProvider time, CancellationToken ct) =>
+        app.MapPost("/dev/token", async (DevTokenRequest req, HttpContext http, SessionService sessions, AppDbContext db, TimeProvider time, CancellationToken ct) =>
         {
+            // Extra layer: only callers on this machine (a null address means an in-process test server).
+            var remote = http.Connection.RemoteIpAddress;
+            if (remote is not null && !System.Net.IPAddress.IsLoopback(remote))
+                return Results.Problem(statusCode: StatusCodes.Status403Forbidden, title: "Dev token is only available from localhost");
+
             var subject = req.Subject?.Trim();
             if (string.IsNullOrEmpty(subject) || subject.Length > 100)
                 return Results.Problem(statusCode: StatusCodes.Status400BadRequest, title: "subject is required (max 100 chars)");
@@ -48,7 +53,7 @@ public static class DevAuthEndpoints
           .Doc("Dev", "Entrar sem Google/Apple (somente desenvolvimento)",
               "Cria ou encontra o usuario `dev:<subject>` e devolve tokens reais da API. Com completeProfile=true o perfil adulto e preenchido (termos \"dev\", locale pt-BR). Existe apenas em Development com DevAuth:Enabled=true.")
           .Produces<AuthTokens>()
-          .ProducesProblem(StatusCodes.Status400BadRequest);
+          .ProducesProblem(StatusCodes.Status400BadRequest).ProducesProblem(StatusCodes.Status403Forbidden);
 
         return app;
     }

@@ -14,6 +14,7 @@ dotnet user-secrets set "Storage:ConnectionString" "UseDevelopmentStorage=true" 
 dotnet tool restore
 dotnet ef database update --project src/TwoDrink.Infrastructure --startup-project src/TwoDrink.Api --connection "Host=localhost;Port=5432;Database=twodrink;Username=twodrink_owner;Password=owner_dev_pw"
 docker compose -f docker-compose.dev.yml exec -T postgres psql -U twodrink_owner -d twodrink < scripts/dev-create-api-login.sql
+# No PowerShell, troque o "<" por: Get-Content scripts/dev-create-api-login.sql | docker compose -f docker-compose.dev.yml exec -T postgres psql -U twodrink_owner -d twodrink
 dotnet run --project src/TwoDrink.Api
 ```
 

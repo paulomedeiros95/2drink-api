@@ -1,6 +1,15 @@
 -- Login LOCAL da API (somente desenvolvimento). Rode DEPOIS de `dotnet ef database update`, como dono do banco:
 --   docker compose -f docker-compose.dev.yml exec -T postgres psql -U twodrink_owner -d twodrink < scripts/dev-create-api-login.sql
 -- Idempotente: pode rodar varias vezes. A API nunca deve conectar como o dono.
+\set ON_ERROR_STOP on
+-- Guarda: aborta fora do banco local de desenvolvimento.
+DO $$
+BEGIN
+    IF current_database() <> 'twodrink' OR current_user <> 'twodrink_owner' THEN
+        RAISE EXCEPTION 'Este script e SOMENTE para o banco local de desenvolvimento (banco twodrink, usuario twodrink_owner).';
+    END IF;
+END
+$$;
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'twodrink_api_dev') THEN

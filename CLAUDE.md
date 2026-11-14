@@ -139,10 +139,10 @@ Passo a passo para quem nao e programador, no Windows. Tudo roda na sua maquina;
    dotnet user-secrets set "Storage:ConnectionString" "UseDevelopmentStorage=true" --project src/TwoDrink.Api
    dotnet user-secrets set "Google:PlacesApiKey" "<chave do Google Places da dona do produto>" --project src/TwoDrink.Api
    ```
-   Os dois ultimos itens sao opcionais: sem `Google:PlacesApiKey`, `GET /venues/nearby` responde 503 `places_unavailable`
+   Apenas `Google:PlacesApiKey` e opcional (a API inicia sem ela); `Storage:ConnectionString` e obrigatoria. Sem `Google:PlacesApiKey`, `GET /venues/nearby` responde 503 `places_unavailable`
    (veja o passo 9). Em Development nao precisa de `Auth:Google:ClientIds` / `Auth:Apple:Audiences`
    (so seriam necessarios para login real com Google/Apple).
-   O que nao e segredo ja vem em `src/TwoDrink.Api/appsettings.Development.json` (`DevAuth:Enabled`, `Storage:AllowHttpSas`, `Invites:BaseUrl`...).
+   O que nao e segredo ja vem em `src/TwoDrink.Api/appsettings.Development.json` (`DevAuth:Enabled`, `Storage:AllowHttpSas`, `Invites:BaseUrl`...). Os servicos do docker compose escutam so em 127.0.0.1.
 3. **Criar as tabelas** (como DONO do banco, `twodrink_owner`):
    `dotnet tool restore`
    `dotnet ef database update --project src/TwoDrink.Infrastructure --startup-project src/TwoDrink.Api --connection "Host=localhost;Port=5432;Database=twodrink;Username=twodrink_owner;Password=owner_dev_pw"`
@@ -162,6 +162,7 @@ Passo a passo para quem nao e programador, no Windows. Tudo roda na sua maquina;
 9. **Bares** — `GET /venues/nearby?lat=-23.55&lng=-46.63` precisa de uma chave real do Google Places (`Google:PlacesApiKey`, e a dona do produto quem tem);
    sem ela volta 503 `places_unavailable`. Para testar check-in sem a chave, crie um bar de teste (como dono):
    `docker compose -f docker-compose.dev.yml exec -T postgres psql -U twodrink_owner -d twodrink < scripts/dev-seed-venue.sql`
+   (no PowerShell: `Get-Content scripts/dev-seed-venue.sql | docker compose -f docker-compose.dev.yml exec -T postgres psql -U twodrink_owner -d twodrink`)
    Ele cria o "Bar de Teste", id `11111111-1111-1111-1111-111111111111`, em lat `-23.5505`, lng `-46.6333`.
 10. **Check-in** (3 passos):
     1. `POST /checkins/intents` com `{ "venueId": "11111111-1111-1111-1111-111111111111", "lat": -23.5505, "lng": -46.6333, "accuracyM": 10, "isMocked": false }`.
@@ -176,5 +177,5 @@ Passo a passo para quem nao e programador, no Windows. Tudo roda na sua maquina;
     `POST /invites/{token}/accept` entra na liga (cole so o `token`, o final do link); `GET /leagues/{id}/standings` mostra o ranking.
 12. **Parar tudo**: `Ctrl+C` na janela da API e `docker compose -f docker-compose.dev.yml down` (os dados do banco e das fotos sao apagados; nao ha volumes).
 
-Notas: `POST /dev/token` so existe com `ASPNETCORE_ENVIRONMENT=Development` **e** `DevAuth:Enabled=true`; fora disso a rota nao existe (usuarios `dev:<subject>` sao criados como Google). Chamadas anonimas a rotas que
+Notas: `POST /dev/token` (alem disso, so aceita chamadas vindas de localhost) so existe com `ASPNETCORE_ENVIRONMENT=Development` **e** `DevAuth:Enabled=true`; fora disso a rota nao existe (usuarios `dev:<subject>` sao criados como Google). Chamadas anonimas a rotas que
 nao existem respondem 401 (politica padrao exige login), nao 404.

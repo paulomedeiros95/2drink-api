@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using TwoDrink.Api.Tests.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace TwoDrink.Api.Tests;
 
@@ -70,5 +71,27 @@ public class DevTokenTests(ApiFactory factory) : IClassFixture<ApiFactory>
         using var other = factory.InEnvironment(environment, devAuth: true);
         var res = await (await other.CreateSignedInClientAsync()).PostAsJsonAsync("/dev/token", new { subject = "x" });
         Assert.Equal(HttpStatusCode.NotFound, res.StatusCode);
+    }
+}
+
+public class DevTokenLoopbackTests(ApiFactory factory) : IClassFixture<ApiFactory>
+{
+    [Fact]
+    public async Task Non_loopback_callers_get_403()
+    {
+        using var dev = factory.InEnvironment("Development", devAuth: true).WithWebHostBuilder(b =>
+            b.ConfigureServices(s => s.AddTransient<Microsoft.AspNetCore.Hosting.IStartupFilter, RemoteAddressFilter>()));
+        var res = await dev.CreateClient().PostAsJsonAsync("/dev/token", new { subject = "far" });
+        Assert.Equal(HttpStatusCode.Forbidden, res.StatusCode);
+    }
+
+    private sealed class RemoteAddressFilter : Microsoft.AspNetCore.Hosting.IStartupFilter
+    {
+        public Action<Microsoft.AspNetCore.Builder.IApplicationBuilder> Configure(Action<Microsoft.AspNetCore.Builder.IApplicationBuilder> next) =>
+            app =>
+            {
+                Microsoft.AspNetCore.Builder.UseExtensions.Use(app, (ctx, n) => { ctx.Connection.RemoteIpAddress = System.Net.IPAddress.Parse("203.0.113.9"); return n(ctx); });
+                next(app);
+            };
     }
 }
